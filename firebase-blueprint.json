@@ -1,0 +1,99 @@
+{
+  "entities": {
+    "Player": {
+      "title": "Player",
+      "description": "A cricket player in the auction pool",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["Batsman", "Bowler", "All-Rounder", "Wicket-Keeper"] },
+        "basePrice": { "type": "number" },
+        "imageUrl": { "type": "string" },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "matches": { "type": "number" },
+            "runs": { "type": "number" },
+            "wickets": { "type": "number" },
+            "strikeRate": { "type": "number" },
+            "economy": { "type": "number" }
+          }
+        },
+        "status": { "type": "string", "enum": ["Available", "Sold", "Unsold"] },
+        "soldTo": { "type": "string" },
+        "soldPrice": { "type": "number" }
+      },
+      "required": ["name", "category", "basePrice", "status"]
+    },
+    "Team": {
+      "title": "Team",
+      "description": "A team participating in the auction",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "totalBudget": { "type": "number" },
+        "remainingBudget": { "type": "number" },
+        "players": { "type": "array", "items": { "type": "string" } },
+        "color": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "mobileNumber": { "type": "string" },
+        "ownerUid": { "type": "string" }
+      },
+      "required": ["name", "totalBudget", "remainingBudget", "color"]
+    },
+    "AuctionState": {
+      "title": "AuctionState",
+      "description": "The current state of the live auction",
+      "type": "object",
+      "properties": {
+        "currentPlayerId": { "type": "string" },
+        "highestBid": { "type": "number" },
+        "highestBidderId": { "type": "string" },
+        "timeLeft": { "type": "number" },
+        "status": { "type": "string", "enum": ["Idle", "Active", "Ended"] },
+        "bidHistory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "amount": { "type": "number" },
+              "bidderId": { "type": "string" },
+              "bidderName": { "type": "string" },
+              "timestamp": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "User": {
+      "title": "User",
+      "description": "Application user role and metadata",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["admin", "team"] },
+        "teamId": { "type": "string" },
+        "email": { "type": "string" },
+        "mobileNumber": { "type": "string" }
+      },
+      "required": ["role"]
+    }
+  },
+  "firestore": {
+    "/players/{playerId}": {
+      "schema": "Player",
+      "description": "Collection of all players"
+    },
+    "/teams/{teamId}": {
+      "schema": "Team",
+      "description": "Collection of all teams"
+    },
+    "/auction/state": {
+      "schema": "AuctionState",
+      "description": "Singleton document for auction state"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and roles"
+    }
+  }
+}
