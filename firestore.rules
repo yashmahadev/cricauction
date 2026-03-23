@@ -60,7 +60,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        ((request.auth.token.email == "yashmahadevwala00@gmail.com") ||
+        ((request.auth.token.email == "yashmahadevwala00@gmail.com" && request.auth.token.email_verified == true) ||
          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
@@ -109,23 +109,26 @@ service cloud.firestore {
     }
 
     function isValidTeam(data) {
-      return hasOnlyAllowedFields(['name', 'totalBudget', 'remainingBudget', 'players', 'color', 'logoUrl', 'mobileNumber', 'ownerUid']) &&
+      return hasOnlyAllowedFields(['name', 'totalBudget', 'remainingBudget', 'players', 'color', 'logoUrl', 'mobileNumber', 'email', 'password', 'ownerUid']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.totalBudget is number && data.totalBudget >= 0 &&
              data.remainingBudget is number && data.remainingBudget >= 0 &&
              data.players is list &&
              data.color is string &&
-             (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() < 1000));
+             (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() < 1000)) &&
+             (!('email' in data) || (data.email is string && data.email.size() < 255)) &&
+             (!('password' in data) || (data.password is string && data.password.size() < 100));
     }
 
     function isValidAuctionState(data) {
-      return hasOnlyAllowedFields(['currentPlayerId', 'highestBid', 'highestBidderId', 'timeLeft', 'status', 'bidHistory']) &&
+      return hasOnlyAllowedFields(['currentPlayerId', 'highestBid', 'highestBidderId', 'timeLeft', 'status', 'bidHistory', 'startTime']) &&
              (!('currentPlayerId' in data) || data.currentPlayerId is string || data.currentPlayerId == null) &&
              data.highestBid is number && data.highestBid >= 0 &&
              (!('highestBidderId' in data) || data.highestBidderId is string || data.highestBidderId == null) &&
              data.timeLeft is number && data.timeLeft >= 0 &&
              data.status in ['Idle', 'Active', 'Ended'] &&
-             data.bidHistory is list;
+             data.bidHistory is list &&
+             (!('startTime' in data) || data.startTime is number);
     }
 
     function isValidAuctionSettings(data) {
@@ -151,6 +154,18 @@ service cloud.firestore {
       allow read: if true; // Publicly readable for public view
       allow create, update: if isAdmin() && isValidPlayer(request.resource.data);
       allow delete: if isAdmin();
+      // Allow team user to update player status to 'Sold' if they won the auction
+      // OR mark as 'Unsold' if timer expired with no bids
+      allow update: if isTeamUser() && 
+                       get(/databases/$(database)/documents/auction/state).data.currentPlayerId == playerId &&
+                       (
+                         (get(/databases/$(database)/documents/auction/state).data.highestBidderId == getTeamId() &&
+                          request.resource.data.status == 'Sold' &&
+                          request.resource.data.soldTo == getTeamId() &&
+                          request.resource.data.soldPrice == get(/databases/$(database)/documents/auction/state).data.highestBid) ||
+                         (get(/databases/$(database)/documents/auction/state).data.highestBidderId == null &&
+                          request.resource.data.status == 'Unsold')
+                       );
     }
 
     match /teams/{teamId} {
@@ -169,7 +184,8 @@ service cloud.firestore {
                         (document == 'settings' && isValidAuctionSettings(request.resource.data))
                       )) ||
                       (isTeamUser() && document == 'state' && isValidAuctionState(request.resource.data) && 
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['highestBid', 'highestBidderId', 'bidHistory']));
+                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['highestBid', 'highestBidderId', 'bidHistory', 'startTime', 'timeLeft']) ||
+                        (request.resource.data.status == 'Ended' && resource.data.status == 'Active')));
       allow create: if isAdmin() && (
                       (document == 'state' && isValidAuctionState(request.resource.data)) ||
                       (document == 'settings' && isValidAuctionSettings(request.resource.data))

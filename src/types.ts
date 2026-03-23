@@ -27,7 +27,11 @@ export interface Team {
   color: string;
   logoUrl?: string;
   mobileNumber?: string;
+  email?: string;
+  password?: string;
   ownerUid?: string;
+  captainId?: string;      // Player ID
+  viceCaptainId?: string;  // Player ID
 }
 
 export interface BidRecord {
@@ -42,6 +46,7 @@ export interface AuctionState {
   highestBid: number;
   highestBidderId: string | null;
   timeLeft: number;
+  startTime?: number; // Timestamp when the auction started or last bid was placed
   status: 'Idle' | 'Active' | 'Ended';
   bidHistory: BidRecord[];
 }

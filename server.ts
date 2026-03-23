@@ -189,6 +189,12 @@ async function startServer() {
       const team = teams.find((t) => t.id === teamId);
       if (!team) return socket.emit("error", "Team not found");
 
+      // Check if player is a captain or vice-captain of any team
+      const isProtectedPlayer = teams.some(t => t.captainId === playerId || t.viceCaptainId === playerId);
+      if (isProtectedPlayer) {
+        return socket.emit("error", "Cannot bid on a Team Captain or Vice Captain!");
+      }
+
       if (amount < auctionState.highestBid + auctionSettings.minBidIncrement && amount !== auctionState.highestBid) {
         // Allow the first bid to be at base price if no highest bidder yet
         if (auctionState.highestBidderId === null && amount === auctionState.highestBid) {
@@ -249,12 +255,19 @@ async function startServer() {
     });
 
     socket.on("admin:add-team", (teamData) => {
+      if (teamData.captainId && teamData.viceCaptainId && teamData.captainId === teamData.viceCaptainId) {
+        return socket.emit("error", "Captain and Vice Captain must be different players");
+      }
+
       const newTeam: Team = {
         ...teamData,
         id: "t" + (teams.length + 1),
         remainingBudget: teamData.totalBudget,
-        players: []
+        players: [],
+        captainId: teamData.captainId || undefined,
+        viceCaptainId: teamData.viceCaptainId || undefined
       };
+
       teams.push(newTeam);
       io.emit("teams:update", teams);
     });
@@ -262,12 +275,19 @@ async function startServer() {
     socket.on("admin:edit-team", (teamData) => {
       const index = teams.findIndex(t => t.id === teamData.id);
       if (index !== -1) {
+        // Validation
+        if (teamData.captainId && teamData.viceCaptainId && teamData.captainId === teamData.viceCaptainId) {
+          return socket.emit("error", "Captain and Vice Captain must be different players");
+        }
+
         // Update budget logic: if total budget changed, adjust remaining budget
         const oldTotal = teams[index].totalBudget;
         const diff = teamData.totalBudget - oldTotal;
         teams[index] = {
           ...teamData,
-          remainingBudget: teams[index].remainingBudget + diff
+          remainingBudget: teams[index].remainingBudget + diff,
+          captainId: teamData.captainId || undefined,
+          viceCaptainId: teamData.viceCaptainId || undefined
         };
         io.emit("teams:update", teams);
       }

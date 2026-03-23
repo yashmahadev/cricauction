@@ -37,6 +37,8 @@
         "color": { "type": "string" },
         "logoUrl": { "type": "string" },
         "mobileNumber": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
         "ownerUid": { "type": "string" }
       },
       "required": ["name", "totalBudget", "remainingBudget", "color"]
