@@ -38,7 +38,8 @@ import {
   FileText,
   Filter,
   ArrowUpDown,
-  BarChart2
+  BarChart2,
+  Menu
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -219,6 +220,11 @@ export default function App() {
     status: 'Idle',
     bidHistory: []
   });
+
+  const descendingBidHistory = auction.bidHistory
+    ? [...auction.bidHistory].slice().sort((a, b) => b.timestamp - a.timestamp)
+    : [];
+
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   
@@ -256,6 +262,11 @@ export default function App() {
     total: number;
     error?: string;
   } | null>(null);
+
+  // Modal and detail states
+  const [selectedPlayerForDetails, setSelectedPlayerForDetails] = useState<Player | null>(null);
+  const [selectedTeamForDetails, setSelectedTeamForDetails] = useState<Team | null>(null);
+  const [showAdminSidebar, setShowAdminSidebar] = useState(false);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
@@ -516,29 +527,31 @@ export default function App() {
 
         if (currentAuction.status !== 'Active') return;
 
-        // Mark auction as ended
+        let winningTeam: Team | null = null;
+        if (currentAuction.highestBidderId) {
+          const teamDoc = await transaction.get(doc(db, 'teams', currentAuction.highestBidderId));
+          if (teamDoc.exists()) {
+            winningTeam = teamDoc.data() as Team;
+          }
+        }
+
+        // All reads are done. Now perform writes.
         transaction.update(doc(db, 'auction', 'state'), {
           status: 'Ended',
           timeLeft: 0
         });
 
-        if (currentAuction.highestBidderId) {
-          // Player sold
-          const teamDoc = await transaction.get(doc(db, 'teams', currentAuction.highestBidderId));
-          if (teamDoc.exists()) {
-            const team = teamDoc.data() as Team;
-            transaction.update(doc(db, 'teams', currentAuction.highestBidderId), {
-              remainingBudget: team.remainingBudget - currentAuction.highestBid,
-              players: arrayUnion(auction.currentPlayerId)
-            });
-            transaction.update(doc(db, 'players', auction.currentPlayerId), {
-              status: 'Sold',
-              soldTo: currentAuction.highestBidderId,
-              soldPrice: currentAuction.highestBid
-            });
-          }
+        if (currentAuction.highestBidderId && winningTeam) {
+          transaction.update(doc(db, 'teams', currentAuction.highestBidderId), {
+            remainingBudget: winningTeam.remainingBudget - currentAuction.highestBid,
+            players: arrayUnion(auction.currentPlayerId)
+          });
+          transaction.update(doc(db, 'players', auction.currentPlayerId), {
+            status: 'Sold',
+            soldTo: currentAuction.highestBidderId,
+            soldPrice: currentAuction.highestBid
+          });
         } else {
-          // Player unsold
           transaction.update(doc(db, 'players', auction.currentPlayerId), {
             status: 'Unsold'
           });
@@ -1306,7 +1319,7 @@ export default function App() {
         </AnimatePresence>
 
         {view === 'public' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 lg:gap-8">
             {/* Left Column: Live Auction */}
             <div className="lg:col-span-8 space-y-8">
               <section className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden relative">
@@ -1391,27 +1404,31 @@ export default function App() {
                           )}
                         </div>
 
-                        {/* Recent Bids Feed */}
-                        <div className="space-y-2">
-                          <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Bid History</p>
-                          <div className="space-y-1 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                        {/* Bid History Feed */}
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">All Bid History (Latest First)</p>
+                            <span className="text-xs font-mono font-bold text-emerald-400">{auction.bidHistory?.length || 0} bids</span>
+                          </div>
+                          <div className="space-y-2 pr-2 custom-scrollbar">
                             <AnimatePresence initial={false}>
-                              {auction.bidHistory?.map((bid, idx) => (
-                                <motion.div 
-                                  key={bid.timestamp + idx}
-                                  initial={{ opacity: 0, x: -10 }}
-                                  animate={{ opacity: 1, x: 0 }}
-                                  className="flex items-center justify-between text-sm py-1.5 border-b border-white/5 last:border-0"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                    <span className="text-white/60">{bid.bidderName}</span>
-                                  </div>
-                                  <span className="font-mono font-bold text-emerald-400">₹{bid.amount}L</span>
-                                </motion.div>
-                              ))}
-                              {(!auction.bidHistory || auction.bidHistory.length === 0) && (
-                                <p className="text-xs text-white/20 italic">No bids yet...</p>
+                              {descendingBidHistory.length > 0 ? (
+                                descendingBidHistory.map((bid, idx) => (
+                                  <motion.div 
+                                    key={bid.timestamp + idx}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    className="flex items-center justify-between text-sm py-2 px-3 bg-white/5 rounded-lg border border-white/10 hover:border-emerald-500/30 transition-all"
+                                  >
+                                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                                      <div className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" />
+                                      <span className="text-white/80 font-medium truncate">{bid.bidderName}</span>
+                                    </div>
+                                    <span className="font-mono font-bold text-emerald-400 flex-shrink-0">₹{bid.amount}L</span>
+                                  </motion.div>
+                                ))
+                              ) : (
+                                <p className="text-xs text-white/20 italic text-center py-4">No bids yet...</p>
                               )}
                             </AnimatePresence>
                           </div>
@@ -1700,16 +1717,16 @@ export default function App() {
               )}
             </AnimatePresence>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Live Auction Control */}
-              <div className="lg:col-span-3">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 lg:gap-8">
+              {/* Live Auction Control - Full Width */}
+              <div className="lg:col-span-4">
                 <section className={cn(
-                  "p-6 rounded-3xl border transition-all",
+                  "p-4 md:p-6 rounded-3xl border transition-all",
                   auction.status === 'Active' ? "bg-emerald-500/5 border-emerald-500/20" : "bg-white/5 border-white/10"
                 )}>
-                  <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                    <div className="flex items-center gap-6">
-                      <div className="w-20 h-20 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-6 overflow-x-auto">
+                    <div className="flex items-start md:items-center gap-3 md:gap-6 flex-1 min-w-0">
+                      <div className="w-14 md:w-20 h-14 md:h-20 flex-shrink-0 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
                         {currentPlayer ? (
                           <img src={currentPlayer.imageUrl || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
@@ -1728,14 +1745,14 @@ export default function App() {
                     </div>
 
                     {auction.status !== 'Active' && currentPlayer && (
-                      <div className="flex items-center gap-4">
+                      <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-end gap-3 w-full md:w-auto">
                         <div className="text-right">
                           <p className="text-[10px] text-white/40 font-bold uppercase mb-1">Status</p>
                           <p className="text-lg font-bold text-white/60">{auction.status === 'Ended' ? 'Auction Ended' : 'Ready to Start'}</p>
                         </div>
                         <button 
                           onClick={() => startAuction(currentPlayer.id)}
-                          className="px-8 py-3 bg-emerald-500 text-black rounded-xl font-bold hover:bg-emerald-400 transition-all flex items-center gap-2"
+                          className="px-6 md:px-8 py-2 md:py-3 bg-emerald-500 text-black rounded-xl font-bold hover:bg-emerald-400 transition-all flex items-center gap-2 text-sm md:text-base w-full md:w-auto justify-center"
                         >
                           <Play className="w-5 h-5 fill-current" /> Start Auction
                         </button>
@@ -1750,8 +1767,8 @@ export default function App() {
                     )}
 
                     {auction.status === 'Active' && (
-                      <div className="flex flex-wrap items-center gap-8">
-                        <div className="text-center md:text-left">
+                      <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center sm:justify-start gap-4 md:gap-6 lg:gap-8 w-full md:w-auto">
+                        <div className="text-center">
                           <p className="text-[10px] text-white/40 font-bold uppercase mb-1">Current Bid</p>
                           <p className="text-2xl font-mono font-bold text-emerald-400">₹{auction.highestBid}L</p>
                           {highestBidder && <p className="text-xs font-bold" style={{ color: highestBidder.color }}>by {highestBidder.name}</p>}
@@ -1780,8 +1797,8 @@ export default function App() {
                 </section>
               </div>
 
-              {/* Settings Panel */}
-              <div className="lg:col-span-1 space-y-6">
+              {/* Settings & Manage Teams */}
+              <div className="lg:col-span-1 space-y-6 hidden lg:block">
                 <section className="bg-white/5 p-6 rounded-3xl border border-white/10">
                   <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
                     <Settings className="w-5 h-5 text-purple-500" />
@@ -1850,23 +1867,23 @@ export default function App() {
                       className="w-full bg-black/50 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm focus:border-blue-500 outline-none transition-all"
                     />
                   </div>
-                  <div className="space-y-4">
+                  <div className="space-y-4 max-h-96 overflow-y-auto">
                     {teams.filter(t => t.name.toLowerCase().includes(teamSearch.toLowerCase())).map(team => (
-                      <div key={team.id} className="p-3 bg-black/20 rounded-2xl border border-white/5">
+                      <div key={team.id} className="p-3 bg-black/20 rounded-2xl border border-white/5 cursor-pointer hover:border-blue-500/30 transition-colors" onClick={() => setSelectedTeamForDetails(team)}>
                         <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 overflow-hidden" style={{ backgroundColor: team.color }}>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 overflow-hidden flex-shrink-0" style={{ backgroundColor: team.color }}>
                               {team.logoUrl ? (
                                 <img src={team.logoUrl || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                               ) : (
                                 <Shield className="w-4 h-4 text-white" />
                               )}
                             </div>
-                            <span className="text-sm font-bold" style={{ color: team.color }}>{team.name}</span>
+                            <span className="text-sm font-bold truncate" style={{ color: team.color }}>{team.name}</span>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => setEditingTeam(team)} className="p-1.5 text-white/40 hover:text-white transition-colors"><Settings className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => setTeamToDelete(team.id)} className="p-1.5 text-red-500/40 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button onClick={(e) => { e.stopPropagation(); setEditingTeam(team); }} className="p-1.5 text-white/40 hover:text-white transition-colors"><Settings className="w-3.5 h-3.5" /></button>
+                            <button onClick={(e) => { e.stopPropagation(); setTeamToDelete(team.id); }} className="p-1.5 text-red-500/40 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                           </div>
                         </div>
                         <div className="flex items-center justify-between">
@@ -1883,18 +1900,18 @@ export default function App() {
                 <section className="bg-[#1a1a1a] p-10 rounded-[2.5rem] border border-white/5 shadow-2xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-[100px] -mr-32 -mt-32 pointer-events-none" />
                   
-                  <div className="flex flex-col gap-5 mb-12">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full">
-                      <div className="w-full sm:w-auto">
-                        <h3 className="text-3xl font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent tracking-tight">Player Management</h3>
-                        <p className="text-white/40 text-sm mt-2 font-medium">Manage your auction pool and player statistics</p>
+                  <div className="flex flex-col gap-5 mb-10 md:mb-12">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 w-full">
+                      <div className="w-full sm:w-auto min-w-0">
+                        <h3 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent tracking-tight">Player Management</h3>
+                        <p className="text-white/40 text-xs sm:text-sm mt-1 sm:mt-2 font-medium">Manage your auction pool and player statistics</p>
                       </div>
-                      <div className="flex items-center gap-3 w-full sm:w-auto">
-                        <div className="relative w-full sm:w-44">
+                      <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto flex-wrap">
+                        <div className="relative w-full sm:w-44 flex-1 sm:flex-none">
                           <select 
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value as any)}
-                            className="w-full bg-white/5 border border-white/10 rounded-2xl pl-5 pr-10 py-3.5 text-sm font-bold focus:border-emerald-500/50 outline-none transition-all appearance-none cursor-pointer text-white/80 hover:bg-white/[0.08]"
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl pl-5 pr-10 py-2.5 sm:py-3.5 text-xs sm:text-sm font-bold focus:border-emerald-500/50 outline-none transition-all appearance-none cursor-pointer text-white/80 hover:bg-white/[0.08]"
                           >
                             <option value="All" className="bg-gray-800 text-white">All Status</option>
                             <option value="Available" className="bg-gray-800 text-white">Available</option>
@@ -1907,46 +1924,46 @@ export default function App() {
                         </div>
                         <button 
                           onClick={() => setIsAddingPlayer(true)}
-                          className="flex items-center gap-2 px-6 py-3.5 bg-emerald-500 text-black rounded-2xl hover:bg-emerald-400 transition-all font-bold text-sm whitespace-nowrap justify-center shadow-lg shadow-emerald-500/20 active:scale-95"
+                          className="flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3.5 bg-emerald-500 text-black rounded-2xl hover:bg-emerald-400 transition-all font-bold text-xs sm:text-sm whitespace-nowrap justify-center shadow-lg shadow-emerald-500/20 active:scale-95 flex-1 sm:flex-none"
                         >
-                          <Plus className="w-5 h-5" /> Add Player
+                          <Plus className="w-4 sm:w-5 h-4 sm:h-5" /> <span className="hidden sm:inline">Add Player</span><span className="sm:hidden">Add</span>
                         </button>
                       </div>
                     </div>
 
                     <div className="relative w-full max-w-full">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/20 focus-within:text-emerald-500 transition-colors" />
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 sm:w-5 h-4 sm:h-5 text-white/20 focus-within:text-emerald-500 transition-colors" />
                       <input 
                         type="text" 
                         placeholder="Search name or category..."
                         value={playerSearch}
                         onChange={(e) => setPlayerSearch(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 py-3.5 text-sm focus:border-emerald-500/50 focus:bg-white/[0.08] outline-none transition-all placeholder:text-white/10 shadow-inner shadow-white/5"
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl pl-10 sm:pl-12 pr-4 py-2.5 sm:py-3.5 text-xs sm:text-sm focus:border-emerald-500/50 focus:bg-white/[0.08] outline-none transition-all placeholder:text-white/10 shadow-inner shadow-white/5"
                       />
                     </div>
                   </div>
 
                   {/* Stats Summary Row */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6 mb-8 md:mb-10">
                     {[
                       { label: 'Total Players', value: players.length, color: 'text-white', icon: Users, bg: 'bg-white/5' },
                       { label: 'Available', value: players.filter(p => p.status === 'Available').length, color: 'text-emerald-500', icon: CheckCircle2, bg: 'bg-emerald-500/5' },
                       { label: 'Sold', value: players.filter(p => p.status === 'Sold').length, color: 'text-blue-500', icon: Trophy, bg: 'bg-blue-500/5' },
                       { label: 'Unsold', value: players.filter(p => p.status === 'Unsold').length, color: 'text-red-500', icon: X, bg: 'bg-red-500/5' }
                     ].map((stat, idx) => (
-                      <div key={idx} className={cn("border border-white/5 rounded-[2rem] p-6 transition-all hover:border-white/10 group relative overflow-hidden", stat.bg)}>
-                        <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
-                          <stat.icon className="w-12 h-12" />
+                      <div key={idx} className={cn("border border-white/5 rounded-[1.5rem] md:rounded-[2rem] p-4 md:p-6 transition-all hover:border-white/10 group relative overflow-hidden", stat.bg)}>
+                        <div className="absolute top-0 right-0 p-1 md:p-2 opacity-5 group-hover:opacity-10 transition-opacity">
+                          <stat.icon className="w-8 md:w-12 h-8 md:h-12" />
                         </div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20 mb-2">{stat.label}</p>
-                        <p className={cn("text-3xl font-mono font-bold", stat.color)}>{stat.value}</p>
+                        <p className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] text-white/20 mb-1 md:mb-2">{stat.label}</p>
+                        <p className={cn("text-2xl md:text-3xl font-mono font-bold", stat.color)}>{stat.value}</p>
                       </div>
                     ))}
                   </div>
 
                   {/* Advanced Filters & Sorting Row */}
-                  <div className="flex flex-col lg:flex-row gap-4 mb-8">
-                    <div className="flex flex-wrap items-center gap-6 flex-1 p-5 bg-white/5 rounded-[2rem] border border-white/5 shadow-inner shadow-white/5">
+                  <div className="flex flex-col lg:flex-row gap-3 md:gap-4 mb-6 md:mb-8">
+                    <div className="flex flex-wrap items-center gap-3 md:gap-6 flex-1 p-3 md:p-5 bg-white/5 rounded-[2rem] border border-white/5 shadow-inner shadow-white/5 w-full md:w-auto">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
                           <Filter className="w-4 h-4 text-emerald-500" />
@@ -2001,7 +2018,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-6 p-5 bg-white/5 rounded-[2rem] border border-white/5 shadow-inner shadow-white/5">
+                    <div className="flex items-center gap-3 md:gap-6 p-3 md:p-5 bg-white/5 rounded-[2rem] border border-white/5 shadow-inner shadow-white/5 w-full flex-wrap md:flex-nowrap">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
                           <ArrowUpDown className="w-4 h-4 text-blue-500" />
@@ -2035,12 +2052,12 @@ export default function App() {
                   </div>
 
                   {filteredPlayers.length === 0 ? (
-                    <div className="py-20 text-center border border-dashed border-white/10 rounded-[2rem]">
-                      <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Search className="w-8 h-8 text-white/10" />
+                    <div className="py-12 md:py-20 text-center border border-dashed border-white/10 rounded-[2rem] px-4 md:px-0">
+                      <div className="w-12 md:w-16 h-12 md:h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Search className="w-6 md:w-8 h-6 md:h-8 text-white/10" />
                       </div>
-                      <h4 className="text-xl font-bold text-white/40">No players found</h4>
-                      <p className="text-white/20 text-sm mt-1">Try adjusting your filters or search terms</p>
+                      <h4 className="text-lg md:text-xl font-bold text-white/40">No players found</h4>
+                      <p className="text-white/20 text-xs md:text-sm mt-1">Try adjusting your filters or search terms</p>
                       <button 
                         onClick={() => {
                           setPlayerSearch('');
@@ -2054,13 +2071,15 @@ export default function App() {
                       </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
                       {filteredPlayers.map(player => (
                         <motion.div 
                           layout
                           key={player.id} 
                           onClick={() => {
-                            if (isSelectionMode) {
+                            if (!isSelectionMode) {
+                              setSelectedPlayerForDetails(player);
+                            } else {
                               setSelectedPlayerIds(prev => 
                                 prev.includes(player.id) 
                                   ? prev.filter(id => id !== player.id) 
@@ -2069,160 +2088,61 @@ export default function App() {
                             }
                           }}
                           className={cn(
-                            "group relative bg-white/[0.03] rounded-[2rem] border transition-all duration-500 overflow-hidden flex flex-col cursor-pointer",
-                            isSelectionMode && selectedPlayerIds.includes(player.id) ? "border-emerald-500 ring-2 ring-emerald-500/20" : "border-white/5 hover:border-emerald-500/30"
+                            "group relative bg-gradient-to-br from-white/[0.08] to-white/[0.02] rounded-2xl border transition-all duration-300 overflow-hidden flex flex-col cursor-pointer hover:border-emerald-500/50",
+                            isSelectionMode && selectedPlayerIds.includes(player.id) ? "border-emerald-500 ring-2 ring-emerald-500/20" : "border-white/10"
                           )}
                         >
-                          {/* Selection Overlay */}
+                          {/* Selection Checkbox */}
                           {isSelectionMode && (
-                            <div className="absolute top-4 right-4 z-20">
+                            <div className="absolute top-2 right-2 z-20">
                               <div className={cn(
-                                "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
-                                selectedPlayerIds.includes(player.id) ? "bg-emerald-500 border-emerald-500" : "bg-black/40 border-white/20"
+                                "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
+                                selectedPlayerIds.includes(player.id) ? "bg-emerald-500 border-emerald-500" : "bg-black/40 border-white/30"
                               )}>
-                                {selectedPlayerIds.includes(player.id) && <CheckCircle2 className="w-4 h-4 text-black" />}
+                                {selectedPlayerIds.includes(player.id) && <CheckCircle2 className="w-3 h-3 text-black" />}
                               </div>
                             </div>
                           )}
 
-                          {/* Player Status Badge */}
-                          <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
-                            <span className={cn(
-                              "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter border",
-                              player.status === 'Available' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
-                              player.status === 'Sold' ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
-                              "bg-red-500/10 text-red-500 border-red-500/20"
-                            )}>
-                              {player.status}
-                            </span>
-                            {teams.map(team => {
-                              if (team.captainId === player.id) {
-                                return (
-                                  <span key={`cap-${team.id}`} className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter border bg-yellow-500/10 text-yellow-400 border-yellow-500/20">
-                                    ⭐ Captain
-                                  </span>
-                                );
-                              }
-                              if (team.viceCaptainId === player.id) {
-                                return (
-                                  <span key={`vc-${team.id}`} className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter border bg-purple-500/10 text-purple-400 border-purple-500/20">
-                                    ⚡ Vice Captain
-                                  </span>
-                                );
-                              }
-                              return null;
-                            })}
-                          </div>
-
-                          {/* Action Buttons Overlay */}
-                          {!isSelectionMode && (
-                            <div className="absolute top-4 right-4 z-10 flex gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); setEditingPlayer(player); }}
-                                className="w-9 h-9 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center text-white/60 hover:text-white hover:bg-white/20 transition-all border border-white/10"
-                                title="Edit Player"
-                              >
-                                <Settings className="w-4 h-4" />
-                              </button>
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); setPlayerToDelete(player.id); }}
-                                className="w-9 h-9 bg-red-500/10 backdrop-blur-md rounded-xl flex items-center justify-center text-red-500/60 hover:text-red-500 hover:bg-red-500/20 transition-all border border-red-500/10"
-                                title="Delete Player"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Card Header/Image */}
-                          <div className="relative h-56 overflow-hidden">
+                          {/* Image */}
+                          <div className="relative h-32 sm:h-40 overflow-hidden">
                             <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] via-transparent to-transparent z-1" />
                             <img 
                               src={player.imageUrl || null} 
-                              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" 
                               referrerPolicy="no-referrer" 
                             />
-                            
-                            {player.status === 'Available' && !isSelectionMode && (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); startAuction(player.id); }}
-                                disabled={auction.status === 'Active' || teams.some(t => t.captainId === player.id || t.viceCaptainId === player.id)}
-                                title={teams.some(t => t.captainId === player.id || t.viceCaptainId === player.id) ? 'Captain/Vice Captain cannot be auctioned' : ''}
-                                className="absolute bottom-4 right-4 z-10 w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-black shadow-xl shadow-emerald-500/40 hover:scale-110 active:scale-95 transition-all disabled:opacity-20 disabled:cursor-not-allowed disabled:scale-100"
-                              >
-                                <Play className="w-6 h-6 fill-current" />
-                              </button>
-                            )}
                           </div>
 
-                          {/* Card Content */}
-                          <div className="p-6 pt-2 flex-1 flex flex-col">
-                            <div className="mb-4">
-                              <div className="flex items-center justify-between mb-1">
-                                <h4 className="text-2xl font-bold text-white group-hover:text-emerald-400 transition-colors tracking-tight">{player.name}</h4>
-                                <span className="text-xs font-mono font-bold text-white/20">#{player.id.slice(-4).toUpperCase()}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="px-2 py-0.5 bg-white/5 rounded-md border border-white/5">
-                                  <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{player.category}</span>
-                                </div>
-                                <span className="w-1 h-1 rounded-full bg-white/10" />
-                                <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Base ₹{player.basePrice}L</span>
-                              </div>
+                          {/* Content */}
+                          <div className="p-3 flex-1 flex flex-col justify-between">
+                            <div className="min-w-0">
+                              <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-emerald-400 transition-colors">{player.name}</h4>
+                              <p className="text-[10px] text-white/40 truncate">{player.category}</p>
                             </div>
 
-                            {/* Stats Grid */}
-                            <div className="grid grid-cols-3 gap-2 mb-6">
-                              <div className="bg-white/5 rounded-xl p-2 border border-white/5 text-center group-hover:bg-white/10 transition-colors">
-                                <p className="text-[8px] font-bold text-white/20 uppercase mb-0.5">Matches</p>
-                                <p className="text-sm font-mono font-bold text-white/80">{player.stats.matches}</p>
-                              </div>
-                              <div className="bg-white/5 rounded-xl p-2 border border-white/5 text-center group-hover:bg-white/10 transition-colors">
-                                <p className="text-[8px] font-bold text-white/20 uppercase mb-0.5">Runs</p>
-                                <p className="text-sm font-mono font-bold text-white/80">{player.stats.runs}</p>
-                              </div>
-                              <div className="bg-white/5 rounded-xl p-2 border border-white/5 text-center group-hover:bg-white/10 transition-colors">
-                                <p className="text-[8px] font-bold text-white/20 uppercase mb-0.5">Wickets</p>
-                                <p className="text-sm font-mono font-bold text-white/80">{player.stats.wickets}</p>
-                              </div>
-                            </div>
-
-                            {/* Performance Matrix */}
-                            <div className="mt-auto pt-4 border-t border-white/5">
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-2">
-                                  <BarChart2 className="w-3 h-3 text-emerald-500/40" />
-                                  <p className="text-[10px] text-white/20 uppercase font-black tracking-tighter">Performance Matrix</p>
-                                </div>
-                                <div className="flex gap-1">
-                                  {[1, 2, 3].map(i => <div key={i} className="w-1 h-1 rounded-full bg-emerald-500/20" />)}
-                                </div>
-                              </div>
-                              <div className="h-20 opacity-40 group-hover:opacity-100 transition-opacity">
-                                <PlayerStatsChart stats={player.stats} />
-                              </div>
-                            </div>
-
-                            {/* Status Quick Toggle (Footer) */}
-                            <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <div className={cn(
-                                  "w-2 h-2 rounded-full",
-                                  player.status === 'Available' ? "bg-emerald-500" :
-                                  player.status === 'Sold' ? "bg-blue-500" : "bg-red-500"
-                                )} />
-                                <label className="text-[10px] font-bold text-white/20 uppercase">Status</label>
-                              </div>
-                              <select 
-                                value={player.status}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => updateDoc(doc(db, 'players', player.id), { status: e.target.value })}
-                                className="bg-transparent text-[10px] font-bold uppercase text-white/40 hover:text-white outline-none cursor-pointer transition-colors"
+                            {/* Status Badge */}
+                            <div className="mt-2 flex items-center justify-between gap-1">
+                              <span className={cn(
+                                "px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter border flex-1 text-center",
+                                player.status === 'Available' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
+                                player.status === 'Sold' ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
+                                "bg-red-500/10 text-red-500 border-red-500/20"
+                              )}>
+                                {player.status === 'Available' ? 'Avail' : player.status === 'Sold' ? 'Sold' : 'Unsold'}
+                              </span>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!isSelectionMode) {
+                                    setEditingPlayer(player);
+                                  }
+                                }}
+                                className="p-1 text-white/40 hover:text-white hover:bg-white/10 rounded transition-colors"
+                                title="Edit"
                               >
-                                <option value="Available" className="bg-gray-800 text-white">Available</option>
-                                <option value="Sold" className="bg-gray-800 text-white">Sold</option>
-                                <option value="Unsold" className="bg-gray-800 text-white">Unsold</option>
-                              </select>
+                                <Settings className="w-3 h-3" />
+                              </button>
                             </div>
                           </div>
                         </motion.div>
@@ -2775,18 +2695,31 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Bid History for Teams */}
-                        <div className="mt-8 space-y-3">
-                          <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Bidding History</p>
-                          <div className="space-y-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-                            {auction.bidHistory?.map((bid, idx) => (
-                              <div key={idx} className="flex items-center justify-between text-sm py-1 border-b border-white/5 last:border-0">
-                                <span className={cn("font-medium", bid.bidderId === userProfile.teamId ? "text-emerald-400" : "text-white/60")}>
-                                  {bid.bidderName} {bid.bidderId === userProfile.teamId && '(You)'}
-                                </span>
-                                <span className="font-mono font-bold">₹{bid.amount}L</span>
-                              </div>
-                            ))}
+                        {/* Bidding History for Teams */}
+                        <div className="mt-8 space-y-3 bg-white/5 rounded-2xl border border-white/10 p-6">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-sm font-bold uppercase tracking-widest text-white">Complete Bidding History (Latest First)</p>
+                            <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full">{auction.bidHistory?.length || 0} bids</span>
+                          </div>
+                          <div className="space-y-2 pr-2 custom-scrollbar max-h-96 overflow-y-auto">
+                            {descendingBidHistory.length > 0 ? (
+                              descendingBidHistory.map((bid, idx) => (
+                                <div key={idx} className="flex items-center justify-between text-sm py-2.5 px-4 bg-black/40 rounded-lg border border-white/10 hover:border-emerald-500/30 hover:bg-black/50 transition-all duration-200">
+                                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                                    <div className={cn(
+                                      "w-2.5 h-2.5 rounded-full flex-shrink-0",
+                                      bid.bidderId === userProfile?.teamId ? "bg-emerald-500" : "bg-blue-500/50"
+                                    )} />
+                                    <span className={cn("font-medium truncate", bid.bidderId === userProfile?.teamId ? "text-emerald-400 font-bold" : "text-white/70")}>
+                                      {bid.bidderName} {bid.bidderId === userProfile?.teamId && <span className="text-emerald-400/80 ml-1">(You)</span>}
+                                    </span>
+                                  </div>
+                                  <span className="font-mono font-bold text-white flex-shrink-0 ml-3">₹{bid.amount}L</span>
+                                </div>
+                              ))
+                            ) : (
+                              <p className="text-xs text-white/30 italic text-center py-6">Waiting for bids...</p>
+                            )}
                           </div>
                         </div>
                         
