@@ -593,6 +593,11 @@ export default function App() {
   const [bidAdjustTeamId, setBidAdjustTeamId] = useState<string | null>(null);
   const [bidAdjustAmount, setBidAdjustAmount] = useState<string>('');
   const [teamBidStep, setTeamBidStep] = useState<number>(10);
+  const [showBudgetAdjust, setShowBudgetAdjust] = useState(false);
+  const [budgetAdjustTeamId, setBudgetAdjustTeamId] = useState<string | null>(null);
+  const [budgetAdjustAmount, setBudgetAdjustAmount] = useState<string>('');
+  const [budgetAdjustMode, setBudgetAdjustMode] = useState<'add' | 'subtract' | 'set'>('add');
+  const [budgetAdjustTarget, setBudgetAdjustTarget] = useState<'both' | 'remaining'>('remaining');
   const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<Player | null>(null);
   const playerCsvInputRef = useRef<HTMLInputElement>(null);
   const teamCsvInputRef = useRef<HTMLInputElement>(null);
@@ -896,6 +901,52 @@ export default function App() {
       remainingBudget: increment(amount),
       totalBudget: increment(amount)
     });
+  };
+
+  const applyBudgetAdjust = async () => {
+    if (!budgetAdjustTeamId) return;
+    const team = teams.find(t => t.id === budgetAdjustTeamId);
+    if (!team) return;
+    const val = parseInt(budgetAdjustAmount);
+    if (isNaN(val) || val < 0) {
+      setError('Please enter a valid positive amount');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
+    let updates: Record<string, any> = {};
+
+    if (budgetAdjustMode === 'set') {
+      updates.remainingBudget = val;
+      if (budgetAdjustTarget === 'both') updates.totalBudget = val;
+    } else {
+      const delta = budgetAdjustMode === 'add' ? val : -val;
+      updates.remainingBudget = increment(delta);
+      if (budgetAdjustTarget === 'both') updates.totalBudget = increment(delta);
+    }
+
+    // Guard: remaining can't go below 0
+    const newRemaining = budgetAdjustMode === 'set' ? val
+      : budgetAdjustMode === 'add' ? team.remainingBudget + val
+      : team.remainingBudget - val;
+
+    if (newRemaining < 0) {
+      setError('Remaining budget cannot go below ₹0L');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'teams', budgetAdjustTeamId), updates);
+      setShowBudgetAdjust(false);
+      setBudgetAdjustTeamId(null);
+      setBudgetAdjustAmount('');
+      setBudgetAdjustMode('add');
+      setBudgetAdjustTarget('remaining');
+    } catch (err: any) {
+      setError(err.message);
+      setTimeout(() => setError(null), 3000);
+    }
   };
 
   const adminAdjustBid = async (teamId: string, amount: number) => {
@@ -1935,14 +1986,23 @@ export default function App() {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-white/40">Budget: ₹{team.remainingBudget}L</span>
-                          {auction.status === 'Active' && (
+                          <div className="flex items-center gap-1">
                             <button
-                              onClick={(e) => { e.stopPropagation(); setBidAdjustTeamId(team.id); setBidAdjustAmount(String(auction.highestBid + settings.minBidIncrement)); setShowBidAdjust(true); }}
-                              className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-all"
+                              onClick={(e) => { e.stopPropagation(); setBudgetAdjustTeamId(team.id); setBudgetAdjustAmount(''); setBudgetAdjustMode('add'); setBudgetAdjustTarget('remaining'); setShowBudgetAdjust(true); }}
+                              className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-lg hover:bg-purple-500/20 transition-all"
+                              title="Adjust Budget"
                             >
-                              <Coins className="w-3 h-3" /> Bid
+                              <Calculator className="w-3 h-3" /> Budget
                             </button>
-                          )}
+                            {auction.status === 'Active' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setBidAdjustTeamId(team.id); setBidAdjustAmount(String(auction.highestBid + settings.minBidIncrement)); setShowBidAdjust(true); }}
+                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-all"
+                              >
+                                <Coins className="w-3 h-3" /> Bid
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -2580,7 +2640,7 @@ export default function App() {
         )}
 
         {view === 'team' && (
-          <div className="max-w-4xl mx-auto space-y-12">
+          <div className="max-w-5xl mx-auto w-full space-y-6 sm:space-y-8">
             {!userProfile?.teamId ? (
               <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/10 p-12">
                 <Shield className="w-16 h-16 text-red-500/50 mx-auto mb-6" />
@@ -2589,67 +2649,60 @@ export default function App() {
                 <button onClick={() => setView('portal')} className="px-8 py-3 bg-white/10 rounded-xl font-bold hover:bg-white/20 transition-all">Back to Portal</button>
               </div>
             ) : (
-              <div className="space-y-12">
-            <header className="flex flex-col sm:flex-row items-center justify-between gap-8 p-8 bg-[#1a1a1a] rounded-[2.5rem] border border-white/5 shadow-2xl relative overflow-hidden">
+              <div className="space-y-6 sm:space-y-8">
+            {/* Team Header */}
+            <header className="p-4 sm:p-6 bg-[#1a1a1a] rounded-2xl sm:rounded-[2.5rem] border border-white/5 shadow-2xl relative overflow-hidden">
               <div 
-                className="absolute top-0 right-0 w-64 h-64 blur-[100px] -mr-32 -mt-32 pointer-events-none opacity-20" 
+                className="absolute top-0 right-0 w-48 h-48 blur-[80px] -mr-24 -mt-24 pointer-events-none opacity-20" 
                 style={{ backgroundColor: teams.find(t => t.id === userProfile.teamId)?.color || '#10b981' }}
               />
-              <div className="flex flex-col sm:flex-row items-center gap-6 text-center sm:text-left relative z-10">
-                <div className="flex items-center gap-4">
+              <div className="relative z-10 flex flex-row items-center justify-between gap-4">
+                {/* Left: logo + name */}
+                <div className="flex items-center gap-3 min-w-0">
                   {teams.find(t => t.id === userProfile.teamId)?.logoUrl && (
                     <img 
                       src={teams.find(t => t.id === userProfile.teamId)?.logoUrl || null} 
-                      className="w-20 h-20 rounded-[1.5rem] object-cover border-2 shadow-2xl" 
+                      className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl object-cover border-2 flex-shrink-0 shadow-xl" 
                       style={{ borderColor: `${teams.find(t => t.id === userProfile.teamId)?.color || '#10b981'}40` }}
                       referrerPolicy="no-referrer" 
                     />
                   )}
-                  <div>
-                    <h2 className="text-4xl font-black tracking-tighter mb-1 text-white">
+                  <div className="min-w-0">
+                    <h2 className="text-xl sm:text-3xl font-black tracking-tight text-white leading-tight truncate">
                       {teams.find(t => t.id === userProfile.teamId)?.name}
                     </h2>
-                    <p className="text-white/40 font-medium flex items-center gap-2">
-                      Team Management Dashboard
-                      <span 
-                        className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border border-white/10 text-white"
-                        style={{ backgroundColor: `${teams.find(t => t.id === userProfile.teamId)?.color || '#10b981'}30` }}
-                      >
-                        {teams.find(t => t.id === userProfile.teamId)?.name}
-                      </span>
-                    </p>
+                    <p className="text-white/40 text-xs sm:text-sm font-medium hidden sm:block">Team Management Dashboard</p>
                   </div>
                 </div>
-              </div>
-              <div className="text-center sm:text-right bg-white/5 px-8 py-5 rounded-[2rem] border border-white/10 min-w-[240px] relative z-10 shadow-inner shadow-white/5">
-                <p className="text-[10px] text-white/40 uppercase font-black tracking-[0.2em] mb-2">Available Funds</p>
-                <div className="flex flex-col items-center sm:items-end">
+                {/* Right: budget */}
+                <div className="flex-shrink-0 text-right bg-white/5 px-4 py-3 sm:px-6 sm:py-4 rounded-xl sm:rounded-2xl border border-white/10">
+                  <p className="text-[9px] sm:text-[10px] text-white/40 uppercase font-black tracking-widest mb-1">Funds</p>
                   <p 
-                    className="text-4xl font-mono font-bold"
+                    className="text-xl sm:text-3xl font-mono font-bold leading-none"
                     style={{ color: teams.find(t => t.id === userProfile.teamId)?.color || '#10b981' }}
                   >
                     ₹{teams.find(t => t.id === userProfile.teamId)?.remainingBudget}L
                   </p>
-                  <div className="w-full h-2 bg-white/5 rounded-full mt-3 overflow-hidden border border-white/5">
+                  <div className="w-full h-1.5 bg-white/5 rounded-full mt-2 overflow-hidden">
                     <motion.div 
                       initial={{ width: 0 }}
                       animate={{ 
                         width: `${((teams.find(t => t.id === userProfile.teamId)?.remainingBudget || 0) / (teams.find(t => t.id === userProfile.teamId)?.totalBudget || 1000)) * 100}%` 
                       }}
                       transition={{ type: "spring", stiffness: 50, damping: 15 }}
-                      className="h-full shadow-[0_0_10px_rgba(0,0,0,0.5)]"
+                      className="h-full"
                       style={{ backgroundColor: teams.find(t => t.id === userProfile.teamId)?.color || '#10b981' }}
                     />
                   </div>
-                  <p className="text-[10px] text-white/20 mt-2 font-black tracking-widest">
-                    {Math.round(((teams.find(t => t.id === userProfile.teamId)?.remainingBudget || 0) / (teams.find(t => t.id === userProfile.teamId)?.totalBudget || 1000)) * 100)}% REMAINING
+                  <p className="text-[9px] text-white/20 mt-1 font-black tracking-widest">
+                    {Math.round(((teams.find(t => t.id === userProfile.teamId)?.remainingBudget || 0) / (teams.find(t => t.id === userProfile.teamId)?.totalBudget || 1000)) * 100)}% LEFT
                   </p>
                 </div>
               </div>
             </header>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-2 space-y-8">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+                  <div className="lg:col-span-2 space-y-6 sm:space-y-8">
                     {auction.status === 'Ended' && currentPlayer ? (
                       <section className="bg-white/5 rounded-3xl border border-white/10 p-8 text-center relative overflow-hidden">
                         <motion.div 
@@ -2678,7 +2731,7 @@ export default function App() {
                         <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/10 to-transparent opacity-50" />
                       </section>
                     ) : auction.status === 'Active' && currentPlayer ? (
-                      <section className="bg-emerald-500/5 rounded-3xl border border-emerald-500/20 p-8">
+                      <section className="bg-emerald-500/5 rounded-2xl sm:rounded-3xl border border-emerald-500/20 p-4 sm:p-8">
                         {teams.find(t => t.id === userProfile.teamId)?.players.length! >= settings.maxPlayersPerTeam && (
                           <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-3 text-amber-400">
                             <AlertCircle className="w-5 h-5 flex-shrink-0" />
@@ -2686,21 +2739,21 @@ export default function App() {
                           </div>
                         )}
                         <div className="flex items-center justify-between mb-6">
-                          <div className="flex items-center gap-4">
-                            <img src={currentPlayer.imageUrl || null} className="w-20 h-20 rounded-2xl object-cover border border-white/10" referrerPolicy="no-referrer" />
+                          <div className="flex items-center gap-3 sm:gap-4">
+                            <img src={currentPlayer.imageUrl || null} className="w-14 h-14 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl object-cover border border-white/10 flex-shrink-0" referrerPolicy="no-referrer" />
                             <div>
-                              <h3 className="text-2xl font-bold">{currentPlayer.name}</h3>
-                              <p className="text-white/40">{currentPlayer.category} • Base ₹{currentPlayer.basePrice}L</p>
-                              <div className="flex flex-wrap gap-3 mt-1 text-xs text-white/50">
+                              <h3 className="text-lg sm:text-2xl font-bold">{currentPlayer.name}</h3>
+                              <p className="text-white/40 text-xs sm:text-sm">{currentPlayer.category} • Base ₹{currentPlayer.basePrice}L</p>
+                              <div className="flex flex-wrap gap-2 sm:gap-3 mt-1 text-xs text-white/50">
                                 <span>{currentPlayer.stats.matches} Matches</span>
                                 {currentPlayer.stats.runs != null && <span>{currentPlayer.stats.runs} Runs</span>}
                                 {currentPlayer.stats.wickets != null && <span>{currentPlayer.stats.wickets} Wkts</span>}
                               </div>
                             </div>
                           </div>
-                          <div className="text-right">
+                          <div className="text-right flex-shrink-0">
                             <p className="text-xs text-white/40 uppercase font-bold">Current Bid</p>
-                            <p className="text-3xl font-mono font-bold text-emerald-400">₹{auction.highestBid}L</p>
+                            <p className="text-2xl sm:text-3xl font-mono font-bold text-emerald-400">₹{auction.highestBid}L</p>
                           </div>
                         </div>
 
@@ -2794,7 +2847,7 @@ export default function App() {
                         </div>
 
                         {/* Bidding History for Teams */}
-                        <div className="mt-8 space-y-3 bg-white/5 rounded-2xl border border-white/10 p-6">
+                        <div className="mt-6 sm:mt-8 space-y-3 bg-white/5 rounded-xl sm:rounded-2xl border border-white/10 p-4 sm:p-6">
                           <div className="flex items-center justify-between mb-2">
                             <p className="text-sm font-bold uppercase tracking-widest text-white">Complete Bidding History (Latest First)</p>
                             <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full">{auction.bidHistory?.length || 0} bids</span>
@@ -2853,7 +2906,7 @@ export default function App() {
                         </div>
                       </section>
                     ) : (
-                      <div className="h-64 bg-white/5 rounded-3xl border border-white/10 flex flex-col items-center justify-center text-center p-8">
+                      <div className="h-48 sm:h-64 bg-white/5 rounded-2xl sm:rounded-3xl border border-white/10 flex flex-col items-center justify-center text-center p-6 sm:p-8">
                         <Coins className="w-12 h-12 text-white/10 mb-4" />
                         <h3 className="text-xl font-bold">No Active Auction</h3>
                         <p className="text-white/40 text-sm">Wait for the admin to start a new round.</p>
@@ -2919,27 +2972,27 @@ export default function App() {
                     </AnimatePresence>
 
                     <section>
-                      <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-xl font-bold">Your Squad</h3>
+                      <div className="flex items-center justify-between mb-4 sm:mb-6">
+                        <h3 className="text-lg sm:text-xl font-bold">Your Squad</h3>
                         <div className="text-right">
                           <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">Total Spent</p>
-                          <p className="text-xl font-mono font-bold text-white">₹{1000 - (teams.find(t => t.id === userProfile.teamId)?.remainingBudget || 0)}L</p>
+                          <p className="text-lg sm:text-xl font-mono font-bold text-white">₹{(teams.find(t => t.id === userProfile.teamId)?.totalBudget || 0) - (teams.find(t => t.id === userProfile.teamId)?.remainingBudget || 0)}L</p>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         {teams.find(t => t.id === userProfile.teamId)?.players.map(pid => {
                           const p = players.find(pl => pl.id === pid);
                           return (
-                            <div key={pid} className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden group hover:border-emerald-500/30 transition-all">
-                              <div className="p-4 flex items-center gap-4">
-                                <img src={p?.imageUrl || null} className="w-14 h-14 rounded-xl object-cover border border-white/10" referrerPolicy="no-referrer" />
-                                <div className="flex-1">
-                                  <h4 className="font-bold text-lg">{p?.name}</h4>
+                            <div key={pid} className="bg-white/5 rounded-xl sm:rounded-2xl border border-white/10 overflow-hidden group hover:border-emerald-500/30 transition-all">
+                              <div className="p-3 sm:p-4 flex items-center gap-3 sm:gap-4">
+                                <img src={p?.imageUrl || null} className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover border border-white/10 flex-shrink-0" referrerPolicy="no-referrer" />
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-bold text-base sm:text-lg truncate">{p?.name}</h4>
                                   <p className="text-xs text-white/40 font-medium uppercase tracking-wider">{p?.category}</p>
                                 </div>
-                                <div className="text-right">
-                                  <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Bought For</p>
-                                  <p className="text-lg font-mono font-bold text-emerald-400">₹{p?.soldPrice}L</p>
+                                <div className="text-right flex-shrink-0">
+                                  <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Bought</p>
+                                  <p className="text-base sm:text-lg font-mono font-bold text-emerald-400">₹{p?.soldPrice}L</p>
                                 </div>
                               </div>
                               {p && (
@@ -2959,8 +3012,8 @@ export default function App() {
                     </section>
                   </div>
 
-                  <div className="space-y-8">
-                    <section className="bg-white/5 rounded-3xl border border-white/10 p-6">
+                  <div className="space-y-6 sm:space-y-8">
+                    <section className="bg-white/5 rounded-2xl sm:rounded-3xl border border-white/10 p-4 sm:p-6">
                       <h3 className="font-bold mb-4 flex items-center gap-2">
                         <TrendingUp className="w-4 h-4 text-emerald-500" />
                         Budget Analysis
@@ -2969,24 +3022,24 @@ export default function App() {
                         <div>
                           <div className="flex justify-between text-xs font-bold uppercase mb-2">
                             <span className="text-white/40">Spent</span>
-                            <span className="text-white">₹{1000 - (teams.find(t => t.id === userProfile.teamId)?.remainingBudget || 0)}L</span>
+                            <span className="text-white">₹{(teams.find(t => t.id === userProfile.teamId)?.totalBudget || 0) - (teams.find(t => t.id === userProfile.teamId)?.remainingBudget || 0)}L</span>
                           </div>
                           <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                             <div 
                               className="h-full bg-emerald-500 transition-all duration-1000" 
-                              style={{ width: `${((1000 - (teams.find(t => t.id === userProfile.teamId)?.remainingBudget || 0)) / 1000) * 100}%` }}
+                              style={{ width: `${(((teams.find(t => t.id === userProfile.teamId)?.totalBudget || 0) - (teams.find(t => t.id === userProfile.teamId)?.remainingBudget || 0)) / (teams.find(t => t.id === userProfile.teamId)?.totalBudget || 1)) * 100}%` }}
                             />
                           </div>
                         </div>
                         <p className="text-xs text-white/40 leading-relaxed">
-                          You have spent {((1000 - (teams.find(t => t.id === userProfile.teamId)?.remainingBudget || 0)) / 1000 * 100).toFixed(1)}% of your total budget. 
-                          Manage your remaining ₹{teams.find(t => t.id === userProfile.teamId)?.remainingBudget}L wisely for upcoming star players.
+                          You have spent {(((teams.find(t => t.id === userProfile.teamId)?.totalBudget || 0) - (teams.find(t => t.id === userProfile.teamId)?.remainingBudget || 0)) / (teams.find(t => t.id === userProfile.teamId)?.totalBudget || 1) * 100).toFixed(1)}% of your total budget. 
+                          Manage your remaining ₹{teams.find(t => t.id === userProfile.teamId)?.remainingBudget}L wisely.
                         </p>
                       </div>
                     </section>
 
                     {budgetProjection && (
-                      <section className="bg-white/5 rounded-3xl border border-white/10 p-6">
+                      <section className="bg-white/5 rounded-2xl sm:rounded-3xl border border-white/10 p-4 sm:p-6">
                         <h3 className="font-bold mb-4 flex items-center gap-2 text-blue-400">
                           <Calculator className="w-4 h-4" />
                           Budget Projection
@@ -3143,6 +3196,186 @@ export default function App() {
               </motion.div>
             </div>
           )}
+        </AnimatePresence>
+
+        {/* Admin Budget Adjustment Modal */}
+        <AnimatePresence>
+          {showBudgetAdjust && budgetAdjustTeamId && (() => {
+            const team = teams.find(t => t.id === budgetAdjustTeamId)!;
+            const val = parseInt(budgetAdjustAmount) || 0;
+            const previewRemaining = budgetAdjustMode === 'set' ? val
+              : budgetAdjustMode === 'add' ? team.remainingBudget + val
+              : team.remainingBudget - val;
+            const previewTotal = budgetAdjustTarget === 'both'
+              ? (budgetAdjustMode === 'set' ? val
+                : budgetAdjustMode === 'add' ? team.totalBudget + val
+                : team.totalBudget - val)
+              : team.totalBudget;
+            const isInvalid = previewRemaining < 0;
+
+            return (
+              <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                  className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl"
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black border border-white/10 overflow-hidden" style={{ backgroundColor: team.color }}>
+                        {team.logoUrl ? <img src={team.logoUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : team.name[0]}
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold">Adjust Budget</h3>
+                        <p className="text-xs text-white/40">{team.name}</p>
+                      </div>
+                    </div>
+                    <button onClick={() => { setShowBudgetAdjust(false); setBudgetAdjustTeamId(null); }} className="p-2 text-white/40 hover:text-white transition-colors">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Current balances */}
+                  <div className="grid grid-cols-2 gap-3 mb-6">
+                    <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+                      <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">Remaining</p>
+                      <p className="text-2xl font-mono font-bold text-emerald-400">₹{team.remainingBudget}L</p>
+                    </div>
+                    <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+                      <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">Total Budget</p>
+                      <p className="text-2xl font-mono font-bold text-white">₹{team.totalBudget}L</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Mode selector */}
+                    <div>
+                      <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-2">Operation</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([['add', 'Add', 'text-emerald-400', 'border-emerald-500/40', 'bg-emerald-500/10'],
+                           ['subtract', 'Subtract', 'text-red-400', 'border-red-500/40', 'bg-red-500/10'],
+                           ['set', 'Set Exact', 'text-blue-400', 'border-blue-500/40', 'bg-blue-500/10']] as const).map(([mode, label, tc, bc, bg]) => (
+                          <button
+                            key={mode}
+                            onClick={() => setBudgetAdjustMode(mode)}
+                            className={cn(
+                              'py-2 rounded-xl text-xs font-bold border transition-all',
+                              budgetAdjustMode === mode ? `${bg} ${bc} ${tc}` : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Amount input with stepper */}
+                    <div>
+                      <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-2">Amount (₹L)</p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setBudgetAdjustAmount(v => String(Math.max(0, (parseInt(v) || 0) - 10)))}
+                          className="w-11 h-11 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-white"
+                        >
+                          <Minus className="w-4 h-4" />
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          value={budgetAdjustAmount}
+                          onChange={(e) => setBudgetAdjustAmount(e.target.value)}
+                          placeholder="0"
+                          className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-center text-xl font-mono font-bold focus:border-purple-500 outline-none transition-all"
+                        />
+                        <button
+                          onClick={() => setBudgetAdjustAmount(v => String((parseInt(v) || 0) + 10))}
+                          className="w-11 h-11 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-white"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                      {/* Quick presets */}
+                      <div className="flex gap-2 mt-2">
+                        {[10, 50, 100, 200, 500].map(p => (
+                          <button
+                            key={p}
+                            onClick={() => setBudgetAdjustAmount(String(p))}
+                            className="flex-1 py-1.5 text-[10px] font-bold bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-all text-white/50"
+                          >
+                            {p}L
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Target selector */}
+                    <div>
+                      <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-2">Apply To</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([['remaining', 'Remaining Only'], ['both', 'Remaining + Total']] as const).map(([t, label]) => (
+                          <button
+                            key={t}
+                            onClick={() => setBudgetAdjustTarget(t)}
+                            className={cn(
+                              'py-2 rounded-xl text-xs font-bold border transition-all',
+                              budgetAdjustTarget === t
+                                ? 'bg-purple-500/10 border-purple-500/40 text-purple-400'
+                                : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Live preview */}
+                    {budgetAdjustAmount !== '' && (
+                      <div className={cn('rounded-2xl p-4 border', isInvalid ? 'bg-red-500/10 border-red-500/30' : 'bg-white/5 border-white/10')}>
+                        <p className="text-[10px] uppercase font-bold tracking-widest mb-3" style={{ color: isInvalid ? '#f87171' : 'rgba(255,255,255,0.4)' }}>
+                          {isInvalid ? 'Invalid — remaining would go below ₹0L' : 'Preview After Change'}
+                        </p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-[10px] text-white/30 mb-1">Remaining</p>
+                            <p className={cn('text-lg font-mono font-bold', isInvalid ? 'text-red-400' : 'text-emerald-400')}>
+                              ₹{previewRemaining}L
+                              {!isInvalid && val > 0 && (
+                                <span className={cn('text-xs ml-1', budgetAdjustMode === 'subtract' ? 'text-red-400' : 'text-emerald-400/60')}>
+                                  ({budgetAdjustMode === 'add' ? '+' : budgetAdjustMode === 'subtract' ? '-' : '='}{val}L)
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-white/30 mb-1">Total Budget</p>
+                            <p className="text-lg font-mono font-bold text-white">
+                              ₹{previewTotal}L
+                              {budgetAdjustTarget === 'both' && val > 0 && (
+                                <span className={cn('text-xs ml-1', budgetAdjustMode === 'subtract' ? 'text-red-400' : 'text-white/40')}>
+                                  ({budgetAdjustMode === 'add' ? '+' : budgetAdjustMode === 'subtract' ? '-' : '='}{val}L)
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={applyBudgetAdjust}
+                      disabled={!budgetAdjustAmount || isNaN(parseInt(budgetAdjustAmount)) || isInvalid}
+                      className="w-full py-4 bg-purple-500 text-white font-bold rounded-2xl hover:bg-purple-400 transition-all shadow-lg shadow-purple-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Apply Budget Change
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            );
+          })()}
         </AnimatePresence>
 
         {/* Admin Live Bid Adjustment Modal */}
