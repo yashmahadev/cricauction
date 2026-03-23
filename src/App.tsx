@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, Component, ReactNode, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Papa from 'papaparse';
 import { 
@@ -29,17 +29,13 @@ import {
   Eye,
   EyeOff,
   Upload,
-  FileSpreadsheet,
   Loader2,
   CheckCircle2,
-  ChevronLeft,
   ChevronDown,
   Download,
   FileText,
   Filter,
-  ArrowUpDown,
-  BarChart2,
-  Menu
+  ArrowUpDown
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -76,13 +72,11 @@ import {
   onSnapshot, 
   setDoc, 
   updateDoc, 
-  deleteDoc, 
   getDoc,
   getDocs,
   addDoc,
   query,
   where,
-  serverTimestamp,
   increment,
   arrayUnion,
   arrayRemove,
@@ -147,7 +141,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 interface ErrorBoundaryProps {
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
 interface ErrorBoundaryState {
@@ -196,6 +190,62 @@ interface ErrorBoundaryState {
     );
   };
 
+// Badge overlay for captain / vice-captain on any player image
+const PlayerAvatar = ({
+  playerId,
+  imageUrl,
+  name,
+  teams,
+  className = '',
+  badgeSize = 'sm',
+}: {
+  playerId: string;
+  imageUrl: string;
+  name?: string;
+  teams: import('./types').Team[];
+  className?: string;
+  badgeSize?: 'xs' | 'sm' | 'md';
+}) => {
+  const isCaptain = teams.some(t => t.captainId === playerId);
+  const isViceCaptain = !isCaptain && teams.some(t => t.viceCaptainId === playerId);
+  const hasRole = isCaptain || isViceCaptain;
+
+  return (
+    <div className="relative inline-block">
+      <img
+        src={imageUrl || undefined}
+        alt={name}
+        className={className}
+        referrerPolicy="no-referrer"
+      />
+      {hasRole && badgeSize === 'xs' && (
+        /* Tiny thumbnails: just a colored corner dot */
+        <span
+          className={cn(
+            'absolute top-0 right-0 w-2.5 h-2.5 rounded-full border border-black/40 shadow shadow-black/60',
+            isCaptain ? 'bg-yellow-400' : 'bg-sky-400'
+          )}
+          title={isCaptain ? 'Captain' : 'Vice Captain'}
+        />
+      )}
+      {hasRole && badgeSize !== 'xs' && (
+        /* Larger images: solid pill at bottom-center */
+        <span
+          className={cn(
+            'absolute bottom-1.5 left-1/2 -translate-x-1/2 z-10 font-black uppercase tracking-widest leading-none whitespace-nowrap rounded-full border shadow-md shadow-black/70',
+            badgeSize === 'md' ? 'text-[10px] px-2.5 py-[3px]' : 'text-[8px] px-2 py-[2px]',
+            isCaptain
+              ? 'bg-yellow-400 text-black border-yellow-200/80'
+              : 'bg-sky-400 text-black border-sky-200/80'
+          )}
+        >
+          {isCaptain ? '★ C' : 'VC'}
+        </span>
+      )}
+    </div>
+  );
+};
+
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<{ role: 'admin' | 'team'; teamId?: string } | null>(null);
@@ -221,9 +271,10 @@ export default function App() {
     bidHistory: []
   });
 
-  const descendingBidHistory = auction.bidHistory
-    ? [...auction.bidHistory].slice().sort((a, b) => b.timestamp - a.timestamp)
-    : [];
+  const descendingBidHistory = useMemo(
+    () => auction.bidHistory ? [...auction.bidHistory].sort((a, b) => b.timestamp - a.timestamp) : [],
+    [auction.bidHistory]
+  );
 
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -265,8 +316,6 @@ export default function App() {
 
   // Modal and detail states
   const [selectedPlayerForDetails, setSelectedPlayerForDetails] = useState<Player | null>(null);
-  const [selectedTeamForDetails, setSelectedTeamForDetails] = useState<Team | null>(null);
-  const [showAdminSidebar, setShowAdminSidebar] = useState(false);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
@@ -374,6 +423,9 @@ export default function App() {
     };
   }, []);
 
+  // Keep a ref to endAuction to avoid stale closure in the timer useEffect
+  const endAuctionRef = useRef<() => Promise<void>>(async () => {});
+
   // Timer logic for admin and real-time display for all
   const [displayTime, setDisplayTime] = useState(0);
 
@@ -387,7 +439,7 @@ export default function App() {
 
         // Admin handles the auction end automatically
         if (userProfile?.role === 'admin' && remaining === 0 && auction.status === 'Active') {
-          endAuction();
+          endAuctionRef.current();
         }
       }, 1000);
     } else {
@@ -474,8 +526,6 @@ export default function App() {
 
   const confirmBid = async () => {
     if (!selectedTeamId || !auction.currentPlayerId || pendingBidAmount === null) return;
-    const team = teams.find(t => t.id === selectedTeamId);
-    if (!team) return;
 
     try {
       await runTransaction(db, async (transaction) => {
@@ -483,11 +533,16 @@ export default function App() {
         if (!auctionDoc.exists()) return;
         const currentAuction = auctionDoc.data() as AuctionState;
 
+        // Read team budget from Firestore to avoid race condition
+        const teamDoc = await transaction.get(doc(db, 'teams', selectedTeamId));
+        if (!teamDoc.exists()) throw new Error('Team not found');
+        const teamData = teamDoc.data() as Team;
+
         if (pendingBidAmount <= currentAuction.highestBid && currentAuction.highestBidderId !== null) {
           throw new Error('Bid must be higher than current highest bid');
         }
 
-        if (pendingBidAmount > team.remainingBudget) {
+        if (pendingBidAmount > teamData.remainingBudget) {
           throw new Error('Insufficient budget');
         }
 
@@ -499,7 +554,7 @@ export default function App() {
           bidHistory: arrayUnion({
             amount: pendingBidAmount,
             bidderId: selectedTeamId,
-            bidderName: team.name,
+            bidderName: teamData.name,
             timestamp: Date.now()
           })
         });
@@ -507,11 +562,11 @@ export default function App() {
     } catch (err: any) {
       setError(err.message);
       setTimeout(() => setError(null), 3000);
+    } finally {
+      setShowConfirmBid(false);
+      setPendingBidAmount(null);
+      setCustomBidAmount('');
     }
-
-    setShowConfirmBid(false);
-    setPendingBidAmount(null);
-    setCustomBidAmount('');
   };
 
   const endAuction = async () => {
@@ -562,6 +617,9 @@ export default function App() {
       setTimeout(() => setError(null), 3000);
     }
   };
+
+  // Keep ref in sync so the timer useEffect never has a stale closure
+  endAuctionRef.current = endAuction;
 
   const startAuction = async (playerId: string) => {
     const player = players.find(p => p.id === playerId);
@@ -710,9 +768,7 @@ export default function App() {
             strikeRate: Math.floor(Math.random() * 50) + 120,
             economy: Math.floor(Math.random() * 4) + 6
           },
-          status: 'Available',
-          soldTo: '',
-          soldPrice: 0
+          status: 'Available'
         });
       }
 
@@ -805,6 +861,7 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleCSVUpload = (event: React.ChangeEvent<HTMLInputElement>, type: 'players' | 'teams') => {
@@ -1011,6 +1068,8 @@ export default function App() {
         matches: parseInt(formData.get('matches') as string),
         runs: formData.get('runs') ? parseInt(formData.get('runs') as string) : null,
         wickets: formData.get('wickets') ? parseInt(formData.get('wickets') as string) : null,
+        strikeRate: formData.get('strikeRate') ? parseFloat(formData.get('strikeRate') as string) : null,
+        economy: formData.get('economy') ? parseFloat(formData.get('economy') as string) : null,
       }
     };
     const newPlayerRef = doc(collection(db, 'players'));
@@ -1038,6 +1097,8 @@ export default function App() {
         matches: parseInt(formData.get('matches') as string),
         runs: formData.get('runs') ? parseInt(formData.get('runs') as string) : null,
         wickets: formData.get('wickets') ? parseInt(formData.get('wickets') as string) : null,
+        strikeRate: formData.get('strikeRate') ? parseFloat(formData.get('strikeRate') as string) : null,
+        economy: formData.get('economy') ? parseFloat(formData.get('economy') as string) : null,
       }
     };
     await updateDoc(doc(db, 'players', editingPlayer.id), player);
@@ -1131,6 +1192,7 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const editTeam = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -1421,11 +1483,13 @@ export default function App() {
                   <div className="p-8">
                     <div className="flex flex-col md:flex-row gap-8">
                       <div className="w-full md:w-64 aspect-square rounded-2xl overflow-hidden border border-white/10 shadow-2xl relative group">
-                        <img 
-                          src={currentPlayer.imageUrl || null} 
-                          alt={currentPlayer.name}
+                        <PlayerAvatar
+                          playerId={currentPlayer.id}
+                          imageUrl={currentPlayer.imageUrl}
+                          name={currentPlayer.name}
+                          teams={teams}
                           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                          referrerPolicy="no-referrer"
+                          badgeSize="md"
                         />
                         <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold border border-white/20">
                           {currentPlayer.category}
@@ -1563,10 +1627,13 @@ export default function App() {
                       )}
                     >
                       <div className="flex items-center gap-4">
-                        <img 
-                          src={player.imageUrl || null} 
-                          className="w-12 h-12 rounded-xl object-cover" 
-                          referrerPolicy="no-referrer" 
+                        <PlayerAvatar
+                          playerId={player.id}
+                          imageUrl={player.imageUrl}
+                          name={player.name}
+                          teams={teams}
+                          className="w-12 h-12 rounded-xl object-cover"
+                          badgeSize="xs"
                         />
                         <div className="flex-1">
                           <h4 className="font-bold">{player.name}</h4>
@@ -1642,7 +1709,16 @@ export default function App() {
                               const p = players.find(pl => pl.id === pid);
                               return (
                                 <div key={pid} className="w-8 h-8 rounded-lg bg-white/10 border border-white/10 overflow-hidden" title={p?.name}>
-                                  <img src={p?.imageUrl || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  {p && (
+                                    <PlayerAvatar
+                                      playerId={p.id}
+                                      imageUrl={p.imageUrl}
+                                      name={p.name}
+                                      teams={teams}
+                                      className="w-full h-full object-cover"
+                                      badgeSize="xs"
+                                    />
+                                  )}
                                 </div>
                               );
                             })
@@ -1826,7 +1902,14 @@ export default function App() {
                     <div className="flex items-start md:items-center gap-3 md:gap-6 flex-1 min-w-0">
                       <div className="w-14 md:w-20 h-14 md:h-20 flex-shrink-0 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
                         {currentPlayer ? (
-                          <img src={currentPlayer.imageUrl || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          <PlayerAvatar
+                            playerId={currentPlayer.id}
+                            imageUrl={currentPlayer.imageUrl}
+                            name={currentPlayer.name}
+                            teams={teams}
+                            className="w-full h-full object-cover"
+                            badgeSize="xs"
+                          />
                         ) : (
                           <User className="w-10 h-10 text-white/10" />
                         )}
@@ -1967,7 +2050,7 @@ export default function App() {
                   </div>
                   <div className="space-y-4 max-h-96 overflow-y-auto">
                     {teams.filter(t => t.name.toLowerCase().includes(teamSearch.toLowerCase())).map(team => (
-                      <div key={team.id} className="p-3 bg-black/20 rounded-2xl border border-white/5 cursor-pointer hover:border-blue-500/30 transition-colors" onClick={() => setSelectedTeamForDetails(team)}>
+                      <div key={team.id} className="p-3 bg-black/20 rounded-2xl border border-white/5 hover:border-blue-500/30 transition-colors">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-3 min-w-0">
                             <div className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 overflow-hidden flex-shrink-0" style={{ backgroundColor: team.color }}>
@@ -2222,10 +2305,13 @@ export default function App() {
                           {/* Image */}
                           <div className="relative h-32 sm:h-40 overflow-hidden">
                             <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] via-transparent to-transparent z-1" />
-                            <img 
-                              src={player.imageUrl || null} 
-                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" 
-                              referrerPolicy="no-referrer" 
+                            <PlayerAvatar
+                              playerId={player.id}
+                              imageUrl={player.imageUrl}
+                              name={player.name}
+                              teams={teams}
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                              badgeSize="sm"
                             />
                           </div>
 
@@ -2382,6 +2468,14 @@ export default function App() {
                             <div>
                               <label className="text-[10px] font-black text-white/20 uppercase tracking-tighter mb-1 block">Wickets</label>
                               <input name="wickets" type="number" defaultValue={editingPlayer?.stats.wickets} className="w-full bg-transparent border-b border-white/10 px-1 py-1 text-sm focus:border-emerald-500 outline-none transition-all font-mono" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-white/20 uppercase tracking-tighter mb-1 block">Strike Rate</label>
+                              <input name="strikeRate" type="number" step="0.1" defaultValue={editingPlayer?.stats.strikeRate} className="w-full bg-transparent border-b border-white/10 px-1 py-1 text-sm focus:border-emerald-500 outline-none transition-all font-mono" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-white/20 uppercase tracking-tighter mb-1 block">Economy</label>
+                              <input name="economy" type="number" step="0.1" defaultValue={editingPlayer?.stats.economy} className="w-full bg-transparent border-b border-white/10 px-1 py-1 text-sm focus:border-emerald-500 outline-none transition-all font-mono" />
                             </div>
                           </div>
                         </div>
@@ -2711,7 +2805,14 @@ export default function App() {
                           className="relative z-10"
                         >
                           <div className="w-32 h-32 rounded-3xl overflow-hidden border-4 border-white/10 mx-auto mb-6 shadow-2xl">
-                            <img src={currentPlayer.imageUrl || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <PlayerAvatar
+                              playerId={currentPlayer.id}
+                              imageUrl={currentPlayer.imageUrl}
+                              name={currentPlayer.name}
+                              teams={teams}
+                              className="w-full h-full object-cover"
+                              badgeSize="md"
+                            />
                           </div>
                           <h3 className="text-4xl font-black mb-2 uppercase tracking-tighter italic">
                             {auction.highestBidderId ? 'Sold!' : 'Unsold'}
@@ -2740,7 +2841,14 @@ export default function App() {
                         )}
                         <div className="flex items-center justify-between mb-6">
                           <div className="flex items-center gap-3 sm:gap-4">
-                            <img src={currentPlayer.imageUrl || null} className="w-14 h-14 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl object-cover border border-white/10 flex-shrink-0" referrerPolicy="no-referrer" />
+                            <PlayerAvatar
+                              playerId={currentPlayer.id}
+                              imageUrl={currentPlayer.imageUrl}
+                              name={currentPlayer.name}
+                              teams={teams}
+                              className="w-14 h-14 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl object-cover border border-white/10 flex-shrink-0"
+                              badgeSize="sm"
+                            />
                             <div>
                               <h3 className="text-lg sm:text-2xl font-bold">{currentPlayer.name}</h3>
                               <p className="text-white/40 text-xs sm:text-sm">{currentPlayer.category} • Base ₹{currentPlayer.basePrice}L</p>
@@ -2933,12 +3041,16 @@ export default function App() {
                             className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
                           >
                             <div className="w-24 h-24 rounded-2xl overflow-hidden border border-white/10 mx-auto mb-4 shadow-xl">
-                              <img 
-                                src={currentPlayer?.imageUrl || null} 
-                                alt={currentPlayer?.name}
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
+                              {currentPlayer && (
+                                <PlayerAvatar
+                                  playerId={currentPlayer.id}
+                                  imageUrl={currentPlayer.imageUrl}
+                                  name={currentPlayer.name}
+                                  teams={teams}
+                                  className="w-full h-full object-cover"
+                                  badgeSize="sm"
+                                />
+                              )}
                             </div>
                             <h3 className="text-2xl font-bold mb-2">Confirm Your Bid</h3>
                             <p className="text-white/60 mb-6">
@@ -2985,7 +3097,14 @@ export default function App() {
                           return (
                             <div key={pid} className="bg-white/5 rounded-xl sm:rounded-2xl border border-white/10 overflow-hidden group hover:border-emerald-500/30 transition-all">
                               <div className="p-3 sm:p-4 flex items-center gap-3 sm:gap-4">
-                                <img src={p?.imageUrl || null} className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover border border-white/10 flex-shrink-0" referrerPolicy="no-referrer" />
+                                <PlayerAvatar
+                                  playerId={pid}
+                                  imageUrl={p?.imageUrl || ''}
+                                  name={p?.name}
+                                  teams={teams}
+                                  className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover border border-white/10 flex-shrink-0"
+                                  badgeSize="sm"
+                                />
                                 <div className="flex-1 min-w-0">
                                   <h4 className="font-bold text-base sm:text-lg truncate">{p?.name}</h4>
                                   <p className="text-xs text-white/40 font-medium uppercase tracking-wider">{p?.category}</p>
@@ -3092,10 +3211,13 @@ export default function App() {
                 <div className="relative h-48 bg-gradient-to-br from-emerald-500/20 to-blue-500/20">
                   <div className="absolute -bottom-12 left-8 flex items-end gap-6">
                     <div className="w-32 h-32 rounded-3xl overflow-hidden border-4 border-[#121212] shadow-2xl">
-                      <img 
-                        src={selectedPlayerProfile.imageUrl || null} 
+                      <PlayerAvatar
+                        playerId={selectedPlayerProfile.id}
+                        imageUrl={selectedPlayerProfile.imageUrl}
+                        name={selectedPlayerProfile.name}
+                        teams={teams}
                         className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer"
+                        badgeSize="md"
                       />
                     </div>
                     <div className="pb-4">
@@ -3478,11 +3600,19 @@ export default function App() {
               className="bg-zinc-900 border border-white/10 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl"
             >
               <div className="w-24 h-24 rounded-2xl overflow-hidden border border-white/10 mx-auto mb-6">
-                <img 
-                  src={players.find(p => p.id === nextPlayerId)?.imageUrl || null} 
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
+                {(() => {
+                  const np = players.find(p => p.id === nextPlayerId);
+                  return np ? (
+                    <PlayerAvatar
+                      playerId={np.id}
+                      imageUrl={np.imageUrl}
+                      name={np.name}
+                      teams={teams}
+                      className="w-full h-full object-cover"
+                      badgeSize="sm"
+                    />
+                  ) : null;
+                })()}
               </div>
               <h3 className="text-2xl font-bold mb-2">Select Next Player?</h3>
               <p className="text-white/40 mb-8">
