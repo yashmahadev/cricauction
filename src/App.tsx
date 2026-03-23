@@ -589,6 +589,10 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showNextPlayerPrompt, setShowNextPlayerPrompt] = useState(false);
   const [nextPlayerId, setNextPlayerId] = useState<string | null>(null);
+  const [showBidAdjust, setShowBidAdjust] = useState(false);
+  const [bidAdjustTeamId, setBidAdjustTeamId] = useState<string | null>(null);
+  const [bidAdjustAmount, setBidAdjustAmount] = useState<string>('');
+  const [teamBidStep, setTeamBidStep] = useState<number>(10);
   const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<Player | null>(null);
   const playerCsvInputRef = useRef<HTMLInputElement>(null);
   const teamCsvInputRef = useRef<HTMLInputElement>(null);
@@ -892,6 +896,43 @@ export default function App() {
       remainingBudget: increment(amount),
       totalBudget: increment(amount)
     });
+  };
+
+  const adminAdjustBid = async (teamId: string, amount: number) => {
+    if (!auction.currentPlayerId || auction.status !== 'Active') return;
+    const team = teams.find(t => t.id === teamId);
+    if (!team) return;
+    if (amount > team.remainingBudget) {
+      setError('Bid amount exceeds team remaining budget');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+    const currentPlayer = players.find(p => p.id === auction.currentPlayerId);
+    if (!currentPlayer || amount < currentPlayer.basePrice) {
+      setError('Bid amount cannot be less than base price');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'auction', 'state'), {
+        highestBid: amount,
+        highestBidderId: teamId,
+        startTime: Date.now(),
+        timeLeft: settings.timerDuration,
+        bidHistory: arrayUnion({
+          amount,
+          bidderId: teamId,
+          bidderName: team.name + ' (Admin)',
+          timestamp: Date.now()
+        })
+      });
+      setShowBidAdjust(false);
+      setBidAdjustTeamId(null);
+      setBidAdjustAmount('');
+    } catch (err: any) {
+      setError(err.message);
+      setTimeout(() => setError(null), 3000);
+    }
   };
 
   const updateSettings = async (newSettings: AuctionSettings) => {
@@ -1398,10 +1439,16 @@ export default function App() {
                               </div>
                               <div>
                                 <p className="text-xs text-white/40 font-bold uppercase">Highest Bidder</p>
-                                <p className="text-lg font-bold" style={{ color: highestBidder.color }}>{highestBidder.name}</p>
+                                <p className="text-lg font-bold text-white" style={{ textShadow: `0 0 20px ${highestBidder.color}` }}>{highestBidder.name}</p>
                               </div>
                             </div>
                           )}
+                        </div>
+
+                        {/* Player Stats Chart */}
+                        <div className="bg-white/5 rounded-2xl border border-white/10 p-4">
+                          <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">Performance Statistics</p>
+                          <PlayerStatsChart stats={currentPlayer.stats} />
                         </div>
 
                         {/* Bid History Feed */}
@@ -1522,7 +1569,7 @@ export default function App() {
                             {team.logoUrl ? (
                               <img src={team.logoUrl} className="w-10 h-10 rounded-xl object-cover border border-white/10" referrerPolicy="no-referrer" />
                             ) : (
-                              <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-lg font-black" style={{ color: team.color }}>
+                              <div className="w-10 h-10 rounded-xl border border-white/10 flex items-center justify-center text-lg font-black text-white" style={{ backgroundColor: team.color }}>
                                 {team.name[0]}
                               </div>
                             )}
@@ -1771,7 +1818,7 @@ export default function App() {
                         <div className="text-center">
                           <p className="text-[10px] text-white/40 font-bold uppercase mb-1">Current Bid</p>
                           <p className="text-2xl font-mono font-bold text-emerald-400">₹{auction.highestBid}L</p>
-                          {highestBidder && <p className="text-xs font-bold" style={{ color: highestBidder.color }}>by {highestBidder.name}</p>}
+                          {highestBidder && <p className="text-xs font-bold text-white" style={{ textShadow: `0 0 12px ${highestBidder.color}` }}>by {highestBidder.name}</p>}
                         </div>
                         <div className="text-center md:text-left">
                           <p className="text-[10px] text-white/40 font-bold uppercase mb-1">Time Left</p>
@@ -1798,7 +1845,7 @@ export default function App() {
               </div>
 
               {/* Settings & Manage Teams */}
-              <div className="lg:col-span-1 space-y-6 hidden lg:block">
+              <div className="lg:col-span-1 space-y-6">
                 <section className="bg-white/5 p-6 rounded-3xl border border-white/10">
                   <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
                     <Settings className="w-5 h-5 text-purple-500" />
@@ -1879,7 +1926,7 @@ export default function App() {
                                 <Shield className="w-4 h-4 text-white" />
                               )}
                             </div>
-                            <span className="text-sm font-bold truncate" style={{ color: team.color }}>{team.name}</span>
+                            <span className="text-sm font-bold truncate text-white">{team.name}</span>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <button onClick={(e) => { e.stopPropagation(); setEditingTeam(team); }} className="p-1.5 text-white/40 hover:text-white transition-colors"><Settings className="w-3.5 h-3.5" /></button>
@@ -1888,6 +1935,14 @@ export default function App() {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-white/40">Budget: ₹{team.remainingBudget}L</span>
+                          {auction.status === 'Active' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setBidAdjustTeamId(team.id); setBidAdjustAmount(String(auction.highestBid + settings.minBidIncrement)); setShowBidAdjust(true); }}
+                              className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-all"
+                            >
+                              <Coins className="w-3 h-3" /> Bid
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1896,7 +1951,7 @@ export default function App() {
               </div>
 
               {/* Player Management */}
-              <div className="lg:col-span-2 space-y-6">
+              <div className="lg:col-span-3 space-y-6">
                 <section className="bg-[#1a1a1a] p-10 rounded-[2.5rem] border border-white/5 shadow-2xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-[100px] -mr-32 -mt-32 pointer-events-none" />
                   
@@ -2071,7 +2126,7 @@ export default function App() {
                       </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
                       {filteredPlayers.map(player => (
                         <motion.div 
                           layout
@@ -2557,8 +2612,8 @@ export default function App() {
                     <p className="text-white/40 font-medium flex items-center gap-2">
                       Team Management Dashboard
                       <span 
-                        className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-white/5 border border-white/10"
-                        style={{ color: teams.find(t => t.id === userProfile.teamId)?.color || '#fff' }}
+                        className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border border-white/10 text-white"
+                        style={{ backgroundColor: `${teams.find(t => t.id === userProfile.teamId)?.color || '#10b981'}30` }}
                       >
                         {teams.find(t => t.id === userProfile.teamId)?.name}
                       </span>
@@ -2630,12 +2685,17 @@ export default function App() {
                             <p className="text-sm font-bold uppercase tracking-wider">Squad Full! You have reached the maximum limit of {settings.maxPlayersPerTeam} players.</p>
                           </div>
                         )}
-                        <div className="flex items-center justify-between mb-8">
+                        <div className="flex items-center justify-between mb-6">
                           <div className="flex items-center gap-4">
                             <img src={currentPlayer.imageUrl || null} className="w-20 h-20 rounded-2xl object-cover border border-white/10" referrerPolicy="no-referrer" />
                             <div>
                               <h3 className="text-2xl font-bold">{currentPlayer.name}</h3>
                               <p className="text-white/40">{currentPlayer.category} • Base ₹{currentPlayer.basePrice}L</p>
+                              <div className="flex flex-wrap gap-3 mt-1 text-xs text-white/50">
+                                <span>{currentPlayer.stats.matches} Matches</span>
+                                {currentPlayer.stats.runs != null && <span>{currentPlayer.stats.runs} Runs</span>}
+                                {currentPlayer.stats.wickets != null && <span>{currentPlayer.stats.wickets} Wkts</span>}
+                              </div>
                             </div>
                           </div>
                           <div className="text-right">
@@ -2644,12 +2704,19 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Player Stats Chart */}
+                        <div className="bg-white/5 rounded-2xl border border-white/10 p-4 mb-6">
+                          <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">Performance Statistics</p>
+                          <PlayerStatsChart stats={currentPlayer.stats} />
+                        </div>
+
+                        <div className="space-y-4">
+                          {/* Quick Bid Button */}
                           {auction.highestBidderId === null ? (
                             <button 
                               onClick={() => handleBid(auction.highestBid)}
                               disabled={teams.find(t => t.id === userProfile.teamId)?.players.length! >= settings.maxPlayersPerTeam}
-                              className="h-20 bg-emerald-500 rounded-2xl text-black font-bold text-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex flex-col items-center justify-center shadow-xl shadow-emerald-500/20 disabled:opacity-20 disabled:cursor-not-allowed disabled:grayscale"
+                              className="w-full h-16 bg-emerald-500 rounded-2xl text-black font-bold text-xl hover:scale-[1.01] active:scale-[0.99] transition-all flex flex-col items-center justify-center shadow-xl shadow-emerald-500/20 disabled:opacity-20 disabled:cursor-not-allowed disabled:grayscale"
                             >
                               <span>Opening Bid ₹{auction.highestBid}L</span>
                               <span className="text-xs opacity-60">Base Price</span>
@@ -2658,39 +2725,70 @@ export default function App() {
                             <button 
                               onClick={() => handleBid(auction.highestBid + settings.minBidIncrement)}
                               disabled={teams.find(t => t.id === userProfile.teamId)?.players.length! >= settings.maxPlayersPerTeam}
-                              className="h-20 bg-emerald-500 rounded-2xl text-black font-bold text-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex flex-col items-center justify-center shadow-xl shadow-emerald-500/20 disabled:opacity-20 disabled:cursor-not-allowed disabled:grayscale"
+                              className="w-full h-16 bg-emerald-500 rounded-2xl text-black font-bold text-xl hover:scale-[1.01] active:scale-[0.99] transition-all flex flex-col items-center justify-center shadow-xl shadow-emerald-500/20 disabled:opacity-20 disabled:cursor-not-allowed disabled:grayscale"
                             >
                               <span>Bid ₹{auction.highestBid + settings.minBidIncrement}L</span>
-                              <span className="text-xs opacity-60">Next Increment (+₹{settings.minBidIncrement}L)</span>
+                              <span className="text-xs opacity-60">+₹{settings.minBidIncrement}L increment</span>
                             </button>
                           )}
-                          <div className="flex flex-col gap-2">
-                            <div className="flex gap-2">
-                              <input 
-                                type="number" 
-                                placeholder="Custom Bid"
+
+                          {/* Manual Amount Stepper */}
+                          <div className="bg-white/5 rounded-2xl border border-white/10 p-4 space-y-3">
+                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Custom Amount</p>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setCustomBidAmount(v => String(Math.max(currentPlayer?.basePrice || 0, (parseInt(v) || auction.highestBid) - teamBidStep)))}
+                                disabled={teams.find(t => t.id === userProfile.teamId)?.players.length! >= settings.maxPlayersPerTeam}
+                                className="w-12 h-12 flex items-center justify-center bg-white/10 border border-white/10 rounded-xl hover:bg-white/20 active:scale-95 transition-all disabled:opacity-20 text-white"
+                              >
+                                <Minus className="w-4 h-4" />
+                              </button>
+                              <input
+                                type="number"
+                                placeholder={String(auction.highestBid + settings.minBidIncrement)}
                                 value={customBidAmount}
                                 onChange={(e) => setCustomBidAmount(e.target.value)}
                                 disabled={teams.find(t => t.id === userProfile.teamId)?.players.length! >= settings.maxPlayersPerTeam}
-                                className="flex-1 bg-white/10 border border-white/10 rounded-xl px-4 text-sm focus:border-emerald-500 outline-none disabled:opacity-20"
+                                className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-center text-lg font-mono font-bold focus:border-emerald-500 outline-none transition-all disabled:opacity-20"
                               />
-                              <button 
-                                onClick={() => {
-                                  const amount = parseInt(customBidAmount);
-                                  if (!isNaN(amount)) handleBid(amount);
-                                }}
+                              <button
+                                onClick={() => setCustomBidAmount(v => String((parseInt(v) || auction.highestBid) + teamBidStep))}
                                 disabled={teams.find(t => t.id === userProfile.teamId)?.players.length! >= settings.maxPlayersPerTeam}
-                                className="px-4 bg-white/20 rounded-xl hover:bg-white/30 transition-all border border-white/10 disabled:opacity-20"
+                                className="w-12 h-12 flex items-center justify-center bg-white/10 border border-white/10 rounded-xl hover:bg-white/20 active:scale-95 transition-all disabled:opacity-20 text-white"
                               >
-                                <ArrowRight className="w-5 h-5" />
+                                <Plus className="w-4 h-4" />
                               </button>
                             </div>
-                            <button 
-                              onClick={() => handleBid(auction.highestBid + 50)}
-                              disabled={teams.find(t => t.id === userProfile.teamId)?.players.length! >= settings.maxPlayersPerTeam}
-                              className="h-10 bg-white/5 rounded-xl text-white font-bold text-sm hover:bg-white/10 transition-all border border-white/10 disabled:opacity-20"
+                            {/* Step Size Selector */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-white/30 font-bold uppercase whitespace-nowrap">Step:</span>
+                              <div className="flex gap-1.5 flex-1">
+                                {[settings.minBidIncrement, 25, 50, 100].map(step => (
+                                  <button
+                                    key={step}
+                                    onClick={() => setTeamBidStep(step)}
+                                    className={cn(
+                                      "flex-1 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
+                                      teamBidStep === step
+                                        ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                                        : "bg-white/5 border-white/10 text-white/40 hover:bg-white/10"
+                                    )}
+                                  >
+                                    {step}L
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                const amount = parseInt(customBidAmount);
+                                if (!isNaN(amount) && amount > 0) handleBid(amount);
+                              }}
+                              disabled={!customBidAmount || isNaN(parseInt(customBidAmount)) || teams.find(t => t.id === userProfile.teamId)?.players.length! >= settings.maxPlayersPerTeam}
+                              className="w-full py-3 bg-white/10 border border-white/10 rounded-xl text-white font-bold text-sm hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                             >
-                              +50L Jump
+                              <ArrowRight className="w-4 h-4" />
+                              Place ₹{customBidAmount || '—'}L Bid
                             </button>
                           </div>
                         </div>
@@ -3042,6 +3140,97 @@ export default function App() {
                     Close Profile
                   </button>
                 </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Admin Live Bid Adjustment Modal */}
+        <AnimatePresence>
+          {showBidAdjust && bidAdjustTeamId && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl"
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-bold">Adjust Live Bid</h3>
+                  <button onClick={() => { setShowBidAdjust(false); setBidAdjustTeamId(null); setBidAdjustAmount(''); }} className="p-2 text-white/40 hover:text-white transition-colors">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {(() => {
+                  const team = teams.find(t => t.id === bidAdjustTeamId);
+                  return (
+                    <div className="space-y-5">
+                      <div className="flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/10">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black border border-white/10" style={{ backgroundColor: team?.color }}>
+                          {team?.logoUrl ? <img src={team.logoUrl} className="w-full h-full object-cover rounded-xl" referrerPolicy="no-referrer" /> : team?.name[0]}
+                        </div>
+                        <div>
+                          <p className="font-bold text-white">{team?.name}</p>
+                          <p className="text-xs text-white/40">Budget: ₹{team?.remainingBudget}L</p>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/20 text-center">
+                        <p className="text-[10px] text-emerald-400/60 uppercase font-bold tracking-widest mb-1">Current Highest Bid</p>
+                        <p className="text-3xl font-mono font-bold text-emerald-400">₹{auction.highestBid}L</p>
+                        {highestBidder && <p className="text-xs text-white/40 mt-1">by {highestBidder.name}</p>}
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-white/40 font-bold uppercase mb-2 block">Set New Bid Amount (₹L)</label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setBidAdjustAmount(v => String(Math.max(currentPlayer?.basePrice || 0, (parseInt(v) || auction.highestBid) - settings.minBidIncrement)))}
+                            className="w-11 h-11 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-white font-bold text-lg"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                          <input
+                            type="number"
+                            value={bidAdjustAmount}
+                            onChange={(e) => setBidAdjustAmount(e.target.value)}
+                            placeholder={String(auction.highestBid + settings.minBidIncrement)}
+                            className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-center text-lg font-mono font-bold focus:border-emerald-500 outline-none transition-all"
+                          />
+                          <button
+                            onClick={() => setBidAdjustAmount(v => String((parseInt(v) || auction.highestBid) + settings.minBidIncrement))}
+                            className="w-11 h-11 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all text-white font-bold text-lg"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          {[settings.minBidIncrement, 50, 100].map(step => (
+                            <button
+                              key={step}
+                              onClick={() => setBidAdjustAmount(String((parseInt(bidAdjustAmount) || auction.highestBid) + step))}
+                              className="flex-1 py-1.5 text-xs font-bold bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-all text-white/60"
+                            >
+                              +{step}L
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          const amount = parseInt(bidAdjustAmount);
+                          if (!isNaN(amount) && amount > 0) adminAdjustBid(bidAdjustTeamId, amount);
+                        }}
+                        disabled={!bidAdjustAmount || isNaN(parseInt(bidAdjustAmount))}
+                        className="w-full py-4 bg-emerald-500 text-black font-bold rounded-2xl hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Apply Bid for {team?.name}
+                      </button>
+                    </div>
+                  );
+                })()}
               </motion.div>
             </div>
           )}
