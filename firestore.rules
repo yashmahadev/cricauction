@@ -1,196 +1,87 @@
-// ===============================================================
-// Assumed Data Model
-// ===============================================================
-//
-// Collection: /users/{userId}
-// Document ID: userId (Firebase Auth UID)
-// Fields:
-//   - role: string (required, 'admin' | 'team')
-//   - teamId: string (optional, for team users)
-//   - email: string (optional, for admin)
-//   - mobileNumber: string (optional, for team users)
-//
-// Collection: /players/{playerId}
-// Document ID: playerId
-// Fields:
-//   - name: string (required)
-//   - category: string (required, 'Batsman' | 'Bowler' | 'All-Rounder' | 'Wicket-Keeper')
-//   - basePrice: number (required)
-//   - imageUrl: string (optional)
-//   - stats: map (optional)
-//   - status: string (required, 'Available' | 'Sold' | 'Unsold')
-//   - soldTo: string (optional, teamId)
-//   - soldPrice: number (optional)
-//
-// Collection: /teams/{teamId}
-// Document ID: teamId
-// Fields:
-//   - name: string (required)
-//   - totalBudget: number (required)
-//   - remainingBudget: number (required)
-//   - players: list (required)
-//   - color: string (required)
-//   - logoUrl: string (optional)
-//   - mobileNumber: string (optional)
-//   - ownerUid: string (optional)
-//
-// Collection: /auction/state
-// Document ID: state
-// Fields:
-//   - currentPlayerId: string (optional)
-//   - highestBid: number (required)
-//   - highestBidderId: string (optional)
-//   - timeLeft: number (required)
-//   - status: string (required, 'Idle' | 'Active' | 'Ended')
-//   - bidHistory: list (required)
-//
-// ===============================================================
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
     function isAdmin() {
-      return isAuthenticated() &&
-        ((request.auth.token.email == "yashmahadevwala00@gmail.com" && request.auth.token.email_verified == true) ||
-         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     function isTeamUser() {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'team';
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'team';
     }
 
     function getTeamId() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) ? 
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId : null;
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId
+        : null;
     }
 
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return request.auth != null && request.auth.uid == userId;
     }
 
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
-    }
-
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
-    }
-
-    // ===============================================================
-    // Domain Validators
-    // ===============================================================
-
-    function isValidUser(data) {
-      return hasOnlyAllowedFields(['role', 'teamId', 'email', 'mobileNumber']) &&
-             data.role in ['admin', 'team'] &&
-             (!('email' in data) || data.email is string) &&
-             (!('mobileNumber' in data) || data.mobileNumber is string);
-    }
-
-    function isValidPlayer(data) {
-      return hasOnlyAllowedFields(['name', 'category', 'basePrice', 'imageUrl', 'stats', 'status', 'soldTo', 'soldPrice']) &&
-             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.category in ['Batsman', 'Bowler', 'All-Rounder', 'Wicket-Keeper'] &&
-             data.basePrice is number && data.basePrice >= 0 &&
-             data.status in ['Available', 'Sold', 'Unsold'] &&
-             (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() < 1000));
-    }
-
-    function isValidTeam(data) {
-      return hasOnlyAllowedFields(['name', 'totalBudget', 'remainingBudget', 'players', 'color', 'logoUrl', 'mobileNumber', 'email', 'password', 'ownerUid']) &&
-             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.totalBudget is number && data.totalBudget >= 0 &&
-             data.remainingBudget is number && data.remainingBudget >= 0 &&
-             data.players is list &&
-             data.color is string &&
-             (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() < 1000)) &&
-             (!('email' in data) || (data.email is string && data.email.size() < 255)) &&
-             (!('password' in data) || (data.password is string && data.password.size() < 100));
-    }
-
-    function isValidAuctionState(data) {
-      return hasOnlyAllowedFields(['currentPlayerId', 'highestBid', 'highestBidderId', 'timeLeft', 'status', 'bidHistory', 'startTime']) &&
-             (!('currentPlayerId' in data) || data.currentPlayerId is string || data.currentPlayerId == null) &&
-             data.highestBid is number && data.highestBid >= 0 &&
-             (!('highestBidderId' in data) || data.highestBidderId is string || data.highestBidderId == null) &&
-             data.timeLeft is number && data.timeLeft >= 0 &&
-             data.status in ['Idle', 'Active', 'Ended'] &&
-             data.bidHistory is list &&
-             (!('startTime' in data) || data.startTime is number);
-    }
-
-    function isValidAuctionSettings(data) {
-      return hasOnlyAllowedFields(['maxPlayersPerTeam', 'minBidIncrement', 'timerDuration']) &&
-             data.maxPlayersPerTeam is number && data.maxPlayersPerTeam > 0 &&
-             data.minBidIncrement is number && data.minBidIncrement > 0 &&
-             data.timerDuration is number && data.timerDuration > 0;
-    }
-
-    // ===============================================================
-    // Rules
-    // ===============================================================
-
+    // ---------------------------------------------------------------
+    // users
+    // ---------------------------------------------------------------
     match /users/{userId} {
-      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
-      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && 
-                      (request.resource.data.role == 'team' || isAdmin());
-      allow update: if isAdmin() && isValidUser(request.resource.data);
+      allow read: if request.auth != null && (isOwner(userId) || isAdmin());
+      allow create: if request.auth != null && isOwner(userId) &&
+        request.resource.data.role in ['admin', 'team'];
+      allow update: if isAdmin() || isOwner(userId);
       allow delete: if isAdmin();
     }
 
+    // ---------------------------------------------------------------
+    // players — admin full write; read public
+    // ---------------------------------------------------------------
     match /players/{playerId} {
-      allow read: if true; // Publicly readable for public view
-      allow create, update: if isAdmin() && isValidPlayer(request.resource.data);
-      allow delete: if isAdmin();
-      // Allow team user to update player status to 'Sold' if they won the auction
-      // OR mark as 'Unsold' if timer expired with no bids
-      allow update: if isTeamUser() && 
-                       get(/databases/$(database)/documents/auction/state).data.currentPlayerId == playerId &&
-                       (
-                         (get(/databases/$(database)/documents/auction/state).data.highestBidderId == getTeamId() &&
-                          request.resource.data.status == 'Sold' &&
-                          request.resource.data.soldTo == getTeamId() &&
-                          request.resource.data.soldPrice == get(/databases/$(database)/documents/auction/state).data.highestBid) ||
-                         (get(/databases/$(database)/documents/auction/state).data.highestBidderId == null &&
-                          request.resource.data.status == 'Unsold')
-                       );
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
+    // ---------------------------------------------------------------
+    // teams — admin full write; public read; team user can update own budget/players
+    // ---------------------------------------------------------------
     match /teams/{teamId} {
-      allow read: if true; // Publicly readable for public view
-      allow create: if isAdmin() && isValidTeam(request.resource.data);
-      allow delete: if isAdmin();
-      allow update: if (isAdmin() && isValidTeam(request.resource.data)) || 
-                       (isTeamUser() && getTeamId() == teamId && 
-                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['remainingBudget', 'players']));
+      allow read: if true;
+      allow write: if isAdmin();
+      allow update: if isTeamUser() && getTeamId() == teamId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['remainingBudget', 'players']);
+
+      match /private/{doc} {
+        allow read, write: if isAdmin();
+      }
     }
 
+    // ---------------------------------------------------------------
+    // auction — admin full write; public read
+    // team users can update auction/state to place bids
+    // ---------------------------------------------------------------
     match /auction/{document} {
       allow read: if true;
-      allow update: if (isAdmin() && (
-                        (document == 'state' && isValidAuctionState(request.resource.data)) ||
-                        (document == 'settings' && isValidAuctionSettings(request.resource.data))
-                      )) ||
-                      (isTeamUser() && document == 'state' && isValidAuctionState(request.resource.data) && 
-                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['highestBid', 'highestBidderId', 'bidHistory', 'startTime', 'timeLeft']) ||
-                        (request.resource.data.status == 'Ended' && resource.data.status == 'Active')));
-      allow create: if isAdmin() && (
-                      (document == 'state' && isValidAuctionState(request.resource.data)) ||
-                      (document == 'settings' && isValidAuctionSettings(request.resource.data))
-                    );
-      allow delete: if isAdmin();
+      allow write: if isAdmin();
+      allow update: if isTeamUser() &&
+        document == 'state' &&
+        resource.data.status == 'Active' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['highestBid', 'highestBidderId', 'bidHistory', 'startTime', 'timeLeft']) &&
+        request.resource.data.highestBid is number &&
+        (
+          (resource.data.highestBidderId == null && request.resource.data.highestBid >= resource.data.highestBid) ||
+          (resource.data.highestBidderId != null && request.resource.data.highestBid > resource.data.highestBid)
+        ) &&
+        (!('startTime' in resource.data) ||
+          request.time > resource.data.startTime + duration.value(2, 's'));
+    }
+
+    // ---------------------------------------------------------------
+    // presence — public read/write for spectator count
+    // ---------------------------------------------------------------
+    match /presence/{sessionId} {
+      allow read, write: if true;
     }
   }
 }

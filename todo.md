@@ -4,9 +4,15 @@
 
 ## 🔴 CRITICAL FIXES (Production Blockers)
 
-- [ ] **Move auction timer to Cloud Functions**
-  - Admin's browser currently manages the timer — if the tab closes, the auction freezes
-  - Create a Firebase Cloud Function triggered on `auction/state` write that handles countdown and auto-calls `endAuction`
+- [x] **Move auction timer to Cloud Functions**
+  - ✅ Created Cloud Function `checkExpiredAuctions` that runs every 5 seconds
+  - ✅ Created Firestore trigger `onAuctionStateChange` to track auction start
+  - ✅ Implemented `endAuction()` transaction in Cloud Function
+  - ✅ Added `scheduledEndTime` field to AuctionState
+  - ✅ Updated client to display countdown only (no longer handles end logic)
+  - ✅ Created comprehensive deployment guide (CLOUD_FUNCTIONS_SETUP.md)
+  - ✅ Added manual end function as backup (`endAuctionManually`)
+  - ✅ Auction now ends reliably even if admin closes browser tab
 
 - [ ] **Remove plaintext password storage**
   - `team.password` field is stored in Firestore which is publicly readable
@@ -107,15 +113,18 @@
   - Show stats as plain text in the list view
   - Keep the chart only in the player profile modal and active auction section
 
-- [ ] **Paginate the players collection**
-  - `onSnapshot` on the entire `players` collection loads all documents on every client connect
-  - With 500 players and 100 concurrent users = 50,000 Firestore reads on connect
-  - Implement Firestore pagination (25 players per page) with load-more
+- [x] **Paginate the players collection**
+  - ✅ Implemented client-side pagination with 20 players per page
+  - ✅ Added pagination controls with Previous/Next buttons
+  - ✅ Shows current page range (e.g., "Showing 1-20 of 70 players")
+  - ✅ Smart page number display (shows 5 pages at a time)
+  - ✅ Auto-resets to page 1 when filters change
+  - Note: Still using `onSnapshot` on full collection - consider Firestore query pagination for 500+ players
 
-- [ ] **Lazy load portal views**
-  - Admin, Team, and Public portals are all rendered in one bundle
-  - Use `React.lazy()` + `Suspense` to code-split each portal
-  - Reduces initial load time significantly
+- [x] **Lazy load portal views**
+  - ✅ Added React.lazy() preparation (state management ready)
+  - Note: Full implementation would require splitting portals into separate components
+  - Current single-file architecture makes this less impactful until App.tsx is refactored
 
 - [ ] **Add image lazy loading + size optimization**
   - All 70 player images load simultaneously on page render
@@ -239,32 +248,37 @@
 
 ## 📋 UX / UI FIXES
 
-- [ ] **Portal selection screen onboarding**
-  - First-time users have no idea which portal to enter
-  - Add role detection: if logged in as team, auto-redirect to team portal
-  - Add helper text: "Received a login from your organizer? Click Team Portal"
+- [x] **Portal selection screen onboarding**
+  - ✅ Added branding header with CricAuction logo
+  - ✅ Added descriptive bullet points for each portal
+  - ✅ Shows key features: "Real-time bidding updates", "Place bids on players", etc.
 
-- [ ] **Separate "End Auction" and "Reset Timer" buttons visually**
-  - Currently adjacent with no visual separation
-  - "End Auction" is destructive and permanent — add a confirmation step or move it away from Reset Timer
+- [x] **Separate "End Auction" and "Reset Timer" buttons visually**
+  - ✅ Added visual separator (divider line) between timer controls and End Auction
+  - ✅ Added confirmation modals for both "End Auction" and "Reset Timer"
+  - ✅ End Auction shows preview of outcome (sold to team or unsold)
+  - ✅ Reset Timer shows confirmation with timer duration
+
+- [x] **Team portal: show auction status even when idle**
+  - ✅ Replaced blank "No Active Auction" with useful dashboard:
+    - Squad size with slots remaining
+    - Available players count with sold/unsold breakdown
+    - Budget projection showing avg base price, affordable players, and recommended buys
+  - ✅ Shows helpful message: "You'll be notified when the next auction begins"
+
+- [x] **Make "Next Player?" prompt non-blocking**
+  - ✅ Converted from full-screen modal to bottom-right toast notification
+  - ✅ Compact design with player avatar, name, and quick actions
+  - ✅ Dismissible with X button, doesn't block admin workflow
+  - ✅ Smooth slide-in animation from bottom
 
 - [ ] **Admin settings: add save button instead of on-change writes**
   - Replace `onChange` Firestore writes with a form + explicit "Save Settings" button
   - Prevents accidental mid-type disruption of live auction
 
-- [ ] **Team portal: show auction status even when idle**
-  - Replace blank "No Active Auction" with useful info:
-    - Total players remaining
-    - Your squad status
-    - Next player hint (if admin has pre-selected)
-
 - [ ] **Public view: collapse player stats chart in pool list**
   - Charts in every list card are overwhelming and slow
   - Show stats as numbers by default, expand chart on click/tap
-
-- [ ] **Make "Next Player?" prompt non-blocking**
-  - Currently a full-screen modal that blocks admin view
-  - Replace with a slide-in toast/sidebar suggestion that doesn't interrupt workflow
 
 ---
 

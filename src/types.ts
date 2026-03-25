@@ -28,7 +28,7 @@ export interface Team {
   logoUrl?: string;
   mobileNumber?: string;
   email?: string;
-  password?: string;
+  password?: string; // admin-only, stored in private subcollection, never in main doc
   ownerUid?: string;
   captainId?: string;      // Player ID
   viceCaptainId?: string;  // Player ID
@@ -47,37 +47,15 @@ export interface AuctionState {
   highestBidderId: string | null;
   timeLeft: number;
   startTime?: number; // Timestamp when the auction started or last bid was placed
-  status: 'Idle' | 'Active' | 'Ended';
+  status: 'Idle' | 'Active' | 'Paused' | 'Ended';
   bidHistory: BidRecord[];
+  scheduledEndTime?: number; // Timestamp when Cloud Function will auto-end the auction
 }
 
 export interface AuctionSettings {
   maxPlayersPerTeam: number;
   minBidIncrement: number;
   timerDuration: number;
+  scheduledStartTime?: number; // Unix ms timestamp, optional
 }
 
-export interface ServerToClientEvents {
-  'auction:update': (state: AuctionState) => void;
-  'auction:start': (player: Player) => void;
-  'auction:end': (result: { playerId: string; teamId: string | null; price: number }) => void;
-  'bid:update': (bid: { amount: number; bidderId: string; bidderName: string }) => void;
-  'teams:update': (teams: Team[]) => void;
-  'players:update': (players: Player[]) => void;
-  'settings:update': (settings: AuctionSettings) => void;
-  'error': (msg: string) => void;
-}
-
-export interface ClientToServerEvents {
-  'bid:place': (data: { playerId: string; amount: number; teamId: string }) => void;
-  'admin:start-auction': (playerId: string) => void;
-  'admin:reset': () => void;
-  'admin:adjust-budget': (data: { teamId: string; amount: number }) => void;
-  'admin:update-settings': (settings: AuctionSettings) => void;
-  'admin:add-player': (player: Omit<Player, 'id' | 'status'>) => void;
-  'admin:edit-player': (player: Player) => void;
-  'admin:delete-player': (playerId: string) => void;
-  'admin:add-team': (team: Omit<Team, 'id' | 'remainingBudget' | 'players'>) => void;
-  'admin:edit-team': (team: Team) => void;
-  'admin:delete-team': (teamId: string) => void;
-}

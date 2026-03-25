@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Papa from 'papaparse';
 import { 
@@ -35,27 +35,25 @@ import {
   Download,
   FileText,
   Filter,
-  ArrowUpDown
+  ArrowUpDown,
+  MessageCircle,
+  BarChart2,
+  Clock,
+  Eye as EyeIcon,
+  Volume2,
+  VolumeX,
+  GitCompare,
+  Calendar
 } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
 import { Player, Team, AuctionState, Category, AuctionSettings } from './types';
 import { auth, db, storage } from './firebase';
+import { cn } from './lib/utils';
+import { PlayerStatsChart, PlayerAvatar } from './components/shared/PlayerComponents';
 import { 
   ref, 
   uploadBytes, 
   getDownloadURL 
 } from 'firebase/storage';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell
-} from 'recharts';
 import { initializeApp, deleteApp } from 'firebase/app';
 import firebaseConfig from '../firebase-applet-config.json';
 import { 
@@ -68,7 +66,8 @@ import {
 } from 'firebase/auth';
 import { 
   collection, 
-  doc, 
+  doc,
+  deleteDoc,
   onSnapshot, 
   setDoc, 
   updateDoc, 
@@ -82,7 +81,8 @@ import {
   arrayRemove,
   runTransaction,
   writeBatch,
-  deleteField
+  deleteField,
+  collectionGroup
 } from 'firebase/firestore';
 
 enum OperationType {
@@ -133,118 +133,23 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     path
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
 }
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
 
-interface ErrorBoundaryProps {
-  children: React.ReactNode;
-}
 
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: any;
-}
-
-  const PlayerStatsChart = ({ stats }: { stats: Player['stats'] }) => {
-    const data = [
-      { name: 'Matches', value: stats.matches || 0, color: '#10b981' },
-      { name: 'Runs', value: stats.runs || 0, color: '#3b82f6' },
-      { name: 'Wickets', value: stats.wickets || 0, color: '#f59e0b' },
-      { name: 'S/R', value: stats.strikeRate || 0, color: '#ec4899' },
-      { name: 'Econ', value: stats.economy || 0, color: '#8b5cf6' },
-    ];
-
-    return (
-      <div className="h-40 w-full mt-4">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-            <XAxis 
-              dataKey="name" 
-              axisLine={false} 
-              tickLine={false} 
-              tick={{ fill: '#ffffff40', fontSize: 9 }} 
-            />
-            <YAxis 
-              axisLine={false} 
-              tickLine={false} 
-              tick={{ fill: '#ffffff40', fontSize: 9 }} 
-            />
-            <Tooltip 
-              contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #ffffff10', borderRadius: '8px', fontSize: '10px' }}
-              itemStyle={{ color: '#fff' }}
-              cursor={{ fill: '#ffffff05' }}
-            />
-            <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
-              {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    );
-  };
-
-// Badge overlay for captain / vice-captain on any player image
-const PlayerAvatar = ({
-  playerId,
-  imageUrl,
-  name,
-  teams,
-  className = '',
-  badgeSize = 'sm',
-}: {
-  playerId: string;
-  imageUrl: string;
-  name?: string;
-  teams: import('./types').Team[];
-  className?: string;
-  badgeSize?: 'xs' | 'sm' | 'md';
-}) => {
-  const isCaptain = teams.some(t => t.captainId === playerId);
-  const isViceCaptain = !isCaptain && teams.some(t => t.viceCaptainId === playerId);
-  const hasRole = isCaptain || isViceCaptain;
-
-  return (
-    <div className="relative inline-block">
-      <img
-        src={imageUrl || undefined}
-        alt={name}
-        className={className}
-        referrerPolicy="no-referrer"
-      />
-      {hasRole && badgeSize === 'xs' && (
-        /* Tiny thumbnails: just a colored corner dot */
-        <span
-          className={cn(
-            'absolute top-0 right-0 w-2.5 h-2.5 rounded-full border border-black/40 shadow shadow-black/60',
-            isCaptain ? 'bg-yellow-400' : 'bg-sky-400'
-          )}
-          title={isCaptain ? 'Captain' : 'Vice Captain'}
-        />
-      )}
-      {hasRole && badgeSize !== 'xs' && (
-        /* Larger images: solid pill at bottom-center */
-        <span
-          className={cn(
-            'absolute bottom-1.5 left-1/2 -translate-x-1/2 z-10 font-black uppercase tracking-widest leading-none whitespace-nowrap rounded-full border shadow-md shadow-black/70',
-            badgeSize === 'md' ? 'text-[10px] px-2.5 py-[3px]' : 'text-[8px] px-2 py-[2px]',
-            isCaptain
-              ? 'bg-yellow-400 text-black border-yellow-200/80'
-              : 'bg-sky-400 text-black border-sky-200/80'
-          )}
-        >
-          {isCaptain ? '★ C' : 'VC'}
-        </span>
-      )}
-    </div>
-  );
-};
+// Countdown display for scheduled auction start
+const ScheduleCountdown = React.memo(({ targetMs }: { targetMs: number }) => {
+  const [remaining, setRemaining] = useState(Math.max(0, targetMs - Date.now()));
+  useEffect(() => {
+    const t = setInterval(() => setRemaining(Math.max(0, targetMs - Date.now())), 1000);
+    return () => clearInterval(t);
+  }, [targetMs]);
+  const h = Math.floor(remaining / 3600000);
+  const m = Math.floor((remaining % 3600000) / 60000);
+  const s = Math.floor((remaining % 60000) / 1000);
+  if (remaining <= 0) return <span className="font-mono font-bold">now!</span>;
+  return <span className="font-mono font-bold">{h > 0 ? `${h}h ` : ''}{m}m {s}s</span>;
+});
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -278,13 +183,67 @@ export default function App() {
 
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+
+  // Sound effects
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const playSound = useCallback((type: 'bid' | 'urgent' | 'sold' | 'unsold') => {
+    if (!soundEnabled) return;
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+      const ctx = audioCtxRef.current;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      if (type === 'bid') {
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.start(now); osc.stop(now + 0.2);
+      } else if (type === 'urgent') {
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.setValueAtTime(550, now + 0.1);
+        osc.frequency.setValueAtTime(440, now + 0.2);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        osc.start(now); osc.stop(now + 0.3);
+      } else if (type === 'sold') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523, now);
+        osc.frequency.setValueAtTime(659, now + 0.1);
+        osc.frequency.setValueAtTime(784, now + 0.2);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+        osc.start(now); osc.stop(now + 0.5);
+      } else {
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.exponentialRampToValueAtTime(200, now + 0.3);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        osc.start(now); osc.stop(now + 0.3);
+      }
+    } catch (_) {}
+  }, [soundEnabled]);
+
+  // Spectator count
+  const [spectatorCount, setSpectatorCount] = useState(0);
+  const spectatorDocRef = useRef<string | null>(null);
+
+  // Player comparison
+  const [comparePlayerIds, setComparePlayerIds] = useState<string[]>([]);
+  const [showCompareModal, setShowCompareModal] = useState(false);
+
   // New State for CRUD
   const [isAddingPlayer, setIsAddingPlayer] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [isAddingTeam, setIsAddingTeam] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [generatedTeamCreds, setGeneratedTeamCreds] = useState<{ mobile: string; email: string; pass: string } | null>(null);
+  const [importedTeamCreds, setImportedTeamCreds] = useState<{ name: string; email: string; password: string }[]>([]);
+  const [teamCredsModal, setTeamCredsModal] = useState<{ name: string; email: string; password: string } | null>(null);
   
   // New State for Bidding
   const [customBidAmount, setCustomBidAmount] = useState<string>('');
@@ -323,33 +282,54 @@ export default function App() {
         setUser(u);
         if (u) {
           const userDoc = await getDoc(doc(db, 'users', u.uid));
+          let profile: { role: 'admin' | 'team'; teamId?: string } | null = null;
           if (userDoc.exists()) {
-            const profile = userDoc.data() as { role: 'admin' | 'team'; teamId?: string };
+            profile = userDoc.data() as { role: 'admin' | 'team'; teamId?: string };
             setUserProfile(profile);
             if (profile.role === 'team' && profile.teamId) {
               setSelectedTeamId(profile.teamId);
             }
-          } else if (u.email === 'yashmahadevwala00@gmail.com') {
-            // Auto-bootstrap default admin
-            const profile = { role: 'admin' as const };
+          } else if (u.email === import.meta.env.VITE_ADMIN_EMAIL) {
+            // Auto-bootstrap default admin (configured via VITE_ADMIN_EMAIL env var)
+            profile = { role: 'admin' as const };
             await setDoc(doc(db, 'users', u.uid), profile);
             setUserProfile(profile);
-          } else if (u.email?.endsWith('@auction.com')) {
-            // Auto-bootstrap team user
-            const mobile = u.email.split('@')[0];
-            const teamsQuery = query(collection(db, 'teams'), where('mobileNumber', '==', mobile));
-            const teamSnap = await getDocs(teamsQuery);
-            if (!teamSnap.empty) {
-              const teamId = teamSnap.docs[0].id;
-              const profile = { role: 'team' as const, teamId };
+          } else if (u.email) {
+            // Auto-bootstrap team user — look up by email or mobile number in teams collection
+            const emailToMatch = u.email;
+            const mobileToMatch = u.email.endsWith('@auction.com') ? u.email.split('@')[0] : null;
+
+            let teamId: string | null = null;
+
+            // Try matching by email field on team doc (publicly readable)
+            const emailQuery = query(collection(db, 'teams'), where('email', '==', emailToMatch));
+            const emailSnap = await getDocs(emailQuery);
+            if (!emailSnap.empty) teamId = emailSnap.docs[0].id;
+
+            // Fallback: match by mobileNumber for @auction.com emails
+            if (!teamId && mobileToMatch) {
+              const mobileQuery = query(collection(db, 'teams'), where('mobileNumber', '==', mobileToMatch));
+              const mobileSnap = await getDocs(mobileQuery);
+              if (!mobileSnap.empty) teamId = mobileSnap.docs[0].id;
+            }
+
+            if (teamId) {
+              profile = { role: 'team' as const, teamId };
               await setDoc(doc(db, 'users', u.uid), profile);
               setUserProfile(profile);
               setSelectedTeamId(teamId);
             }
           }
+          // Auto-navigate to the correct view once profile is resolved
+          if (profile?.role === 'admin') {
+            setView('admin');
+          } else if (profile?.role === 'team') {
+            setView('team');
+          }
         } else {
           setUserProfile(null);
           setSelectedTeamId(null);
+          setView('portal');
         }
       } catch (err) {
         console.error('Auth state change error:', err);
@@ -423,11 +403,86 @@ export default function App() {
     };
   }, []);
 
-  // Keep a ref to endAuction to avoid stale closure in the timer useEffect
-  const endAuctionRef = useRef<() => Promise<void>>(async () => {});
+  // Admin-only: listen to teams/*/private/contact for email + password data
+  useEffect(() => {
+    if (userProfile?.role !== 'admin') return;
+    const unsubscribe = onSnapshot(
+      collectionGroup(db, 'private'),
+      (snapshot) => {
+        const privateMap: Record<string, { email?: string; password?: string }> = {};
+        snapshot.docs.forEach(d => {
+          // path: teams/{teamId}/private/contact
+          const teamId = d.ref.parent.parent?.id;
+          if (teamId) privateMap[teamId] = { email: d.data().email, password: d.data().password };
+        });
+        setTeams(prev => prev.map(t => ({
+          ...t,
+          email: privateMap[t.id]?.email ?? t.email,
+          password: privateMap[t.id]?.password ?? t.password,
+        })));
+      },
+      () => {} // silently ignore permission errors for non-admins
+    );
+    return () => unsubscribe();
+  }, [userProfile?.role]);
 
-  // Timer logic for admin and real-time display for all
+  // Spectator presence — write a doc on mount, delete on unmount
+  useEffect(() => {
+    const sessionId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    spectatorDocRef.current = sessionId;
+    const presenceRef = doc(db, 'presence', sessionId);
+    
+    // Create presence document
+    setDoc(presenceRef, { 
+      ts: Date.now(), 
+      view: 'active',
+      userAgent: navigator.userAgent.slice(0, 100) // Help distinguish different browsers/tabs
+    }).catch((err) => {
+      console.error('Failed to create presence document:', err);
+    });
+    
+    // Heartbeat to keep presence alive
+    const heartbeat = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        setDoc(presenceRef, { 
+          ts: Date.now(), 
+          view: 'active',
+          userAgent: navigator.userAgent.slice(0, 100)
+        }, { merge: true }).catch(() => {});
+      }
+    }, 30000); // Update every 30 seconds
+    
+    // Listen to all presence documents
+    const unsub = onSnapshot(
+      collection(db, 'presence'), 
+      (snap) => {
+        setSpectatorCount(snap.size);
+      }, 
+      (err) => {
+        console.error('Presence snapshot error:', err);
+      }
+    );
+    
+    // Cleanup on unmount or tab close
+    const cleanup = () => {
+      deleteDoc(presenceRef).catch((err) => {
+        console.error('Failed to delete presence document:', err);
+      });
+    };
+    
+    window.addEventListener('beforeunload', cleanup);
+    
+    return () => {
+      clearInterval(heartbeat);
+      unsub();
+      window.removeEventListener('beforeunload', cleanup);
+      cleanup();
+    };
+  }, []);
+
+  // Timer display logic — client-side countdown, admin triggers auto-end when it hits 0
   const [displayTime, setDisplayTime] = useState(0);
+  const autoEndFiredRef = useRef<string | null>(null); // tracks playerId to prevent double-fire
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -437,16 +492,46 @@ export default function App() {
         const remaining = Math.max(0, auction.timeLeft - elapsed);
         setDisplayTime(remaining);
 
-        // Admin handles the auction end automatically
-        if (userProfile?.role === 'admin' && remaining === 0 && auction.status === 'Active') {
-          endAuctionRef.current();
+        // Only admin client triggers the auto-end to avoid race conditions
+        if (remaining === 0 && userProfile?.role === 'admin' && auction.currentPlayerId) {
+          if (autoEndFiredRef.current !== auction.currentPlayerId) {
+            autoEndFiredRef.current = auction.currentPlayerId;
+            endAuctionRef.current();
+          }
         }
       }, 1000);
     } else {
       setDisplayTime(auction.timeLeft);
+      // Reset the guard when auction is no longer active
+      if (auction.status !== 'Active') {
+        autoEndFiredRef.current = null;
+      }
     }
     return () => clearInterval(interval);
-  }, [auction.status, auction.startTime, auction.timeLeft, userProfile?.role]);
+  }, [auction.status, auction.startTime, auction.timeLeft, auction.currentPlayerId, userProfile?.role]);
+
+  // Keep endAuctionRef in sync (for manual end calls)
+  useEffect(() => {
+    endAuctionRef.current = endAuction;
+  });
+
+  // Sound effects — after displayTime is declared
+  const prevBidCountRef = useRef(0);
+  const prevDisplayTimeRef = useRef(0);
+  useEffect(() => {
+    const bidCount = auction.bidHistory?.length || 0;
+    if (bidCount > prevBidCountRef.current) playSound('bid');
+    prevBidCountRef.current = bidCount;
+  }, [auction.bidHistory?.length, playSound]);
+  useEffect(() => {
+    if (auction.status === 'Active' && displayTime <= 5 && displayTime > 0 && prevDisplayTimeRef.current > displayTime) {
+      playSound('urgent');
+    }
+    prevDisplayTimeRef.current = displayTime;
+  }, [displayTime, auction.status, playSound]);
+  useEffect(() => {
+    if (auction.status === 'Ended') playSound(auction.highestBidderId ? 'sold' : 'unsold');
+  }, [auction.status, auction.highestBidderId, playSound]);
 
   const currentPlayer = useMemo(() => 
     players.find(p => p.id === auction.currentPlayerId), 
@@ -528,36 +613,34 @@ export default function App() {
     if (!selectedTeamId || !auction.currentPlayerId || pendingBidAmount === null) return;
 
     try {
-      await runTransaction(db, async (transaction) => {
-        const auctionDoc = await transaction.get(doc(db, 'auction', 'state'));
-        if (!auctionDoc.exists()) return;
-        const currentAuction = auctionDoc.data() as AuctionState;
+      // Validate client-side using already-subscribed realtime data
+      const currentTeam = teams.find(t => t.id === selectedTeamId);
+      if (!currentTeam) throw new Error('Team not found');
 
-        // Read team budget from Firestore to avoid race condition
-        const teamDoc = await transaction.get(doc(db, 'teams', selectedTeamId));
-        if (!teamDoc.exists()) throw new Error('Team not found');
-        const teamData = teamDoc.data() as Team;
+      if (pendingBidAmount < auction.highestBid) {
+        throw new Error('Bid must be at least the current highest bid');
+      }
+      if (pendingBidAmount === auction.highestBid && auction.highestBidderId !== null) {
+        throw new Error('Bid must be higher than current highest bid');
+      }
+      if (pendingBidAmount > currentTeam.remainingBudget) {
+        throw new Error('Insufficient budget');
+      }
+      if (auction.status !== 'Active') {
+        throw new Error('Auction is not active');
+      }
 
-        if (pendingBidAmount <= currentAuction.highestBid && currentAuction.highestBidderId !== null) {
-          throw new Error('Bid must be higher than current highest bid');
-        }
-
-        if (pendingBidAmount > teamData.remainingBudget) {
-          throw new Error('Insufficient budget');
-        }
-
-        transaction.update(doc(db, 'auction', 'state'), {
-          highestBid: pendingBidAmount,
-          highestBidderId: selectedTeamId,
-          startTime: Date.now(),
-          timeLeft: settings.timerDuration,
-          bidHistory: arrayUnion({
-            amount: pendingBidAmount,
-            bidderId: selectedTeamId,
-            bidderName: teamData.name,
-            timestamp: Date.now()
-          })
-        });
+      await updateDoc(doc(db, 'auction', 'state'), {
+        highestBid: pendingBidAmount,
+        highestBidderId: selectedTeamId,
+        startTime: Date.now(),
+        timeLeft: settings.timerDuration,
+        bidHistory: arrayUnion({
+          amount: pendingBidAmount,
+          bidderId: selectedTeamId,
+          bidderName: currentTeam.name,
+          timestamp: Date.now()
+        })
       });
     } catch (err: any) {
       setError(err.message);
@@ -599,15 +682,15 @@ export default function App() {
         if (currentAuction.highestBidderId && winningTeam) {
           transaction.update(doc(db, 'teams', currentAuction.highestBidderId), {
             remainingBudget: winningTeam.remainingBudget - currentAuction.highestBid,
-            players: arrayUnion(auction.currentPlayerId)
+            players: arrayUnion(currentAuction.currentPlayerId)
           });
-          transaction.update(doc(db, 'players', auction.currentPlayerId), {
+          transaction.update(doc(db, 'players', currentAuction.currentPlayerId!), {
             status: 'Sold',
             soldTo: currentAuction.highestBidderId,
             soldPrice: currentAuction.highestBid
           });
         } else {
-          transaction.update(doc(db, 'players', auction.currentPlayerId), {
+          transaction.update(doc(db, 'players', currentAuction.currentPlayerId!), {
             status: 'Unsold'
           });
         }
@@ -617,9 +700,6 @@ export default function App() {
       setTimeout(() => setError(null), 3000);
     }
   };
-
-  // Keep ref in sync so the timer useEffect never has a stale closure
-  endAuctionRef.current = endAuction;
 
   const startAuction = async (playerId: string) => {
     const player = players.find(p => p.id === playerId);
@@ -633,7 +713,7 @@ export default function App() {
       return;
     }
 
-    await updateDoc(doc(db, 'auction', 'state'), {
+    await setDoc(doc(db, 'auction', 'state'), {
       currentPlayerId: playerId,
       highestBid: player.basePrice,
       highestBidderId: null,
@@ -644,9 +724,97 @@ export default function App() {
     });
   };
 
+  const pauseAuction = async () => {
+    if (auction.status !== 'Active') return;
+    // Snapshot remaining time before pausing
+    const elapsed = auction.startTime ? Math.floor((Date.now() - auction.startTime) / 1000) : 0;
+    const remaining = Math.max(0, auction.timeLeft - elapsed);
+    await updateDoc(doc(db, 'auction', 'state'), { status: 'Paused', timeLeft: remaining });
+  };
+
+  const resumeAuction = async () => {
+    if (auction.status !== 'Paused') return;
+    await updateDoc(doc(db, 'auction', 'state'), { status: 'Active', startTime: Date.now() });
+  };
+
+  const reAuctionUnsold = async () => {
+    const unsoldPlayers = players.filter(p => p.status === 'Unsold');
+    if (unsoldPlayers.length === 0) return;
+    try {
+      const chunks: typeof unsoldPlayers[] = [];
+      for (let i = 0; i < unsoldPlayers.length; i += 500) chunks.push(unsoldPlayers.slice(i, i + 500));
+      for (const chunk of chunks) {
+        const batch = writeBatch(db);
+        chunk.forEach(p => batch.update(doc(db, 'players', p.id), { status: 'Available' }));
+        await batch.commit();
+      }
+    } catch (err: any) {
+      setError('Failed to re-queue unsold players: ' + err.message);
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const resetTeamPassword = async (team: Team) => {
+    const email = team.email;
+    if (!email) {
+      setError('No email on record for this team.');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+    const newPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4);
+    try {
+      // Sign in as the team user via a secondary app, then update their password
+      const secondaryApp = initializeApp(firebaseConfig, `reset-${Date.now()}`);
+      const secondaryAuth = getAuth(secondaryApp);
+      // We need the current password to re-authenticate — we have it in the private doc
+      const currentPassword = team.password;
+      if (!currentPassword) {
+        // No stored password — use REST API to create/overwrite the account
+        const apiKey = firebaseConfig.apiKey;
+        const res = await fetch(
+          `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password: newPassword, returnSecureToken: false }),
+          }
+        );
+        if (!res.ok) {
+          const errData = await res.json();
+          if (errData.error?.message === 'EMAIL_EXISTS') {
+            // Can't reset without current password — send reset email
+            await deleteApp(secondaryApp);
+            const { sendPasswordResetEmail } = await import('firebase/auth');
+            const tempAuth = getAuth(secondaryApp);
+            await sendPasswordResetEmail(tempAuth, email);
+            setTeamCredsModal({ name: team.name, email, password: '(reset email sent to team)' });
+            return;
+          }
+          throw new Error(errData.error?.message || 'Failed to reset auth account');
+        }
+        await deleteApp(secondaryApp);
+      } else {
+        const { signInWithEmailAndPassword: signIn, updatePassword } = await import('firebase/auth');
+        const cred = await signIn(secondaryAuth, email, currentPassword);
+        await updatePassword(cred.user, newPassword);
+        await deleteApp(secondaryApp);
+      }
+
+      // Persist new password to private subcollection
+      await setDoc(doc(db, 'teams', team.id, 'private', 'contact'), { email, password: newPassword }, { merge: true });
+
+      setTeamCredsModal({ name: team.name, email, password: newPassword });
+    } catch (err: any) {
+      setError('Password reset failed: ' + err.message);
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [showNextPlayerPrompt, setShowNextPlayerPrompt] = useState(false);
   const [nextPlayerId, setNextPlayerId] = useState<string | null>(null);
+  const [showEndAuctionConfirm, setShowEndAuctionConfirm] = useState(false);
+  const [showResetTimerConfirm, setShowResetTimerConfirm] = useState(false);
   const [showBidAdjust, setShowBidAdjust] = useState(false);
   const [bidAdjustTeamId, setBidAdjustTeamId] = useState<string | null>(null);
   const [bidAdjustAmount, setBidAdjustAmount] = useState<string>('');
@@ -659,6 +827,13 @@ export default function App() {
   const [selectedPlayerProfile, setSelectedPlayerProfile] = useState<Player | null>(null);
   const playerCsvInputRef = useRef<HTMLInputElement>(null);
   const teamCsvInputRef = useRef<HTMLInputElement>(null);
+  
+  // Keep a ref to endAuction for manual calls
+  const endAuctionRef = useRef<() => Promise<void>>(async () => {});
+  
+  // Pagination state
+  const [playersPage, setPlayersPage] = useState(1);
+  const playersPerPage = 20;
 
   const filteredPlayers = useMemo(() => {
     const filtered = players.filter(p => {
@@ -692,26 +867,64 @@ export default function App() {
     });
   }, [players, playerSearch, statusFilter, minRuns, maxWickets, sortBy, sortOrder]);
 
+  // Paginated players for display
+  const paginatedPlayers = useMemo(() => {
+    const startIndex = (playersPage - 1) * playersPerPage;
+    return filteredPlayers.slice(startIndex, startIndex + playersPerPage);
+  }, [filteredPlayers, playersPage, playersPerPage]);
+
+  const totalPages = Math.ceil(filteredPlayers.length / playersPerPage);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPlayersPage(1);
+  }, [playerSearch, statusFilter, minRuns, maxWickets, sortBy, sortOrder]);
+
   useEffect(() => {
     if (userProfile?.role === 'admin' && auction.status === 'Ended' && auction.currentPlayerId) {
-      const currentIndex = filteredPlayers.findIndex(p => p.id === auction.currentPlayerId);
-      
-      let nextPlayer = null;
-      for (let i = 1; i <= filteredPlayers.length; i++) {
-        const nextIdx = (currentIndex + i) % filteredPlayers.length;
-        const p = filteredPlayers[nextIdx];
-        if (p.status === 'Available' && p.id !== auction.currentPlayerId) {
-          nextPlayer = p;
-          break;
-        }
-      }
+      const availablePlayers = players.filter(
+        p => p.status === 'Available' && p.id !== auction.currentPlayerId
+      );
 
-      if (nextPlayer) {
-        setNextPlayerId(nextPlayer.id);
-        setShowNextPlayerPrompt(true);
-      }
+      if (availablePlayers.length === 0) return;
+
+      const nextPlayer = availablePlayers[0];
+      setNextPlayerId(nextPlayer.id);
+      setShowNextPlayerPrompt(true);
+
+      // Auto-start next player after 4 seconds
+      const timer = setTimeout(() => {
+        setShowNextPlayerPrompt(false);
+        setNextPlayerId(null);
+        startAuction(nextPlayer.id);
+      }, 4000);
+
+      return () => clearTimeout(timer);
     }
-  }, [auction.status, auction.currentPlayerId, userProfile?.role, filteredPlayers]);
+  }, [auction.status, auction.currentPlayerId, userProfile?.role]);
+
+  const backfillTeamEmails = async () => {
+    if (userProfile?.role !== 'admin') return;
+    let fixed = 0;
+    try {
+      const batch = writeBatch(db);
+      for (const team of teams) {
+        if (team.email) continue;
+        // Fetch private/contact doc for this team (admin-only read)
+        const contactDoc = await getDoc(doc(db, 'teams', team.id, 'private', 'contact'));
+        if (!contactDoc.exists()) continue;
+        const email = contactDoc.data().email;
+        if (!email) continue;
+        batch.update(doc(db, 'teams', team.id), { email });
+        fixed++;
+      }
+      if (fixed > 0) await batch.commit();
+      alert(`Done — backfilled email for ${fixed} team(s).`);
+    } catch (err: any) {
+      setError('Backfill failed: ' + err.message);
+      setTimeout(() => setError(null), 4000);
+    }
+  };
 
   const generateSampleData = async () => {
     if (userProfile?.role !== 'admin') return;
@@ -790,42 +1003,43 @@ export default function App() {
     setIsResetting(true);
     setError(null);
     try {
-      const allOps = [
-        ...players.map(player => ({
-          type: 'delete',
-          ref: doc(db, 'players', player.id)
-        })),
-        ...teams.map(team => ({
-          type: 'delete',
-          ref: doc(db, 'teams', team.id)
-        })),
-        {
-          type: 'update',
-          ref: doc(db, 'auction', 'state'),
-          data: {
-            currentPlayerId: null,
-            highestBid: 0,
-            highestBidderId: null,
-            timeLeft: 0,
-            status: 'Idle' as const,
-            bidHistory: []
-          }
-        }
-      ];
-
-      // Firestore batch limit is 500
-      for (let i = 0; i < allOps.length; i += 500) {
+      // Delete players in batches
+      for (let i = 0; i < players.length; i += 400) {
         const batch = writeBatch(db);
-        const chunk = allOps.slice(i, i + 500);
-        chunk.forEach(op => {
-          if (op.type === 'delete') {
-            batch.delete(op.ref);
-          } else {
-            batch.update(op.ref, op.data);
-          }
-        });
+        players.slice(i, i + 400).forEach(p => batch.delete(doc(db, 'players', p.id)));
         await batch.commit();
       }
+
+      // Delete private/contact subcollection docs FIRST (before parent team docs)
+      // Wrapped separately — these may not exist for all teams
+      try {
+        for (let i = 0; i < teams.length; i += 400) {
+          const batch = writeBatch(db);
+          teams.slice(i, i + 400).forEach(t =>
+            batch.delete(doc(db, 'teams', t.id, 'private', 'contact'))
+          );
+          await batch.commit();
+        }
+      } catch (_) {
+        // Non-fatal: private docs may not exist for all teams
+      }
+
+      // Delete teams
+      for (let i = 0; i < teams.length; i += 400) {
+        const batch = writeBatch(db);
+        teams.slice(i, i + 400).forEach(t => batch.delete(doc(db, 'teams', t.id)));
+        await batch.commit();
+      }
+
+      // Reset auction state — full overwrite to clear all stale fields
+      await setDoc(doc(db, 'auction', 'state'), {
+        currentPlayerId: null,
+        highestBid: 0,
+        highestBidderId: null,
+        timeLeft: 0,
+        status: 'Idle' as const,
+        bidHistory: []
+      });
 
       setShowResetConfirm(false);
       setError("Auction reset successfully! All teams and players deleted.");
@@ -843,7 +1057,9 @@ export default function App() {
       ? [
           ['name', 'category', 'basePrice', 'imageUrl', 'matches', 'runs', 'wickets', 'strikeRate', 'economy'],
           ['Virat Kohli', 'Batsman', '200', 'https://picsum.photos/seed/virat/200/200', '250', '12000', '4', '130.5', '0'],
-          ['Jasprit Bumrah', 'Bowler', '150', 'https://picsum.photos/seed/bumrah/200/200', '120', '50', '150', '80.0', '6.5']
+          ['Jasprit Bumrah', 'Bowler', '150', 'https://picsum.photos/seed/bumrah/200/200', '120', '50', '150', '80.0', '6.5'],
+          ['Hardik Pandya', 'All-Rounder', '150', 'https://picsum.photos/seed/hardik/200/200', '100', '2000', '60', '145.0', '8.5'],
+          ['MS Dhoni', 'Wicket-Keeper', '200', 'https://picsum.photos/seed/dhoni/200/200', '350', '10000', '0', '135.0', '0']
         ]
       : [
           ['name', 'totalBudget', 'color', 'logoUrl', 'mobileNumber', 'email'],
@@ -862,6 +1078,15 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  // Normalize a raw CSV category string to a valid Category value
+  const normalizeCategory = (raw: string): Category => {
+    const s = (raw || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+    if (s.includes('wicket') || s.includes('keeper') || s === 'wk') return 'Wicket-Keeper';
+    if (s.includes('all') || s.includes('rounder')) return 'All-Rounder';
+    if (s.includes('bowl')) return 'Bowler';
+    return 'Batsman';
   };
 
   const handleCSVUpload = (event: React.ChangeEvent<HTMLInputElement>, type: 'players' | 'teams') => {
@@ -888,7 +1113,7 @@ export default function App() {
             for (const row of data) {
               const player: Omit<Player, 'id'> = {
                 name: row.name || 'Unknown Player',
-                category: (row.category as Category) || 'Batsman',
+                category: normalizeCategory(row.category),
                 basePrice: Number(row.basePrice) || 0,
                 imageUrl: row.imageUrl || '',
                 stats: {
@@ -906,22 +1131,41 @@ export default function App() {
             }
           } else {
             let count = 0;
+            const credsCollected: { name: string; email: string; password: string }[] = [];
             for (const row of data) {
               const mobileNumber = row.mobileNumber || '';
               const email = row.email || (mobileNumber ? `${mobileNumber}@auction.com` : '');
-              const password = Math.random().toString(36).slice(-8);
-              
+              let password = Math.random().toString(36).slice(-8);
+
               if (email) {
-                const secondaryApp = initializeApp(firebaseConfig, `secondary-${Date.now()}-${count}`);
-                const secondaryAuth = getAuth(secondaryApp);
+                // Use Firebase Auth REST API to create/manage users without a secondary app instance
+                // This avoids any risk of the secondary app interfering with the admin's auth state
+                const apiKey = firebaseConfig.apiKey;
                 try {
-                  await createUserWithEmailAndPassword(secondaryAuth, email, password);
-                } catch (authErr: any) {
-                  if (authErr.code !== 'auth/email-already-in-use') {
-                    console.error(`Auth error for ${email}:`, authErr);
+                  const res = await fetch(
+                    `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
+                    {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ email, password, returnSecureToken: false }),
+                    }
+                  );
+                  if (!res.ok) {
+                    const err = await res.json();
+                    if (err.error?.message === 'EMAIL_EXISTS') {
+                      // Account exists — reuse existing password if we have it
+                      const existingTeam = teams.find(t => t.email === email);
+                      if (existingTeam?.password) {
+                        password = existingTeam.password;
+                      } else {
+                        password = '(existing — use Reset Password in admin)';
+                      }
+                    }
+                    // Other errors: log but continue — Firestore write still proceeds
                   }
+                } catch (fetchErr) {
+                  console.error(`Auth REST error for ${email}:`, fetchErr);
                 }
-                await deleteApp(secondaryApp);
               }
 
               const team: Omit<Team, 'id'> = {
@@ -932,13 +1176,17 @@ export default function App() {
                 color: row.color || '#ffffff',
                 logoUrl: row.logoUrl || '',
                 mobileNumber: mobileNumber,
-                email: email,
-                password: password
+                ...(email ? { email } : {}),
               };
-              await addDoc(collection(db, 'teams'), team);
+              const newTeamRef = await addDoc(collection(db, 'teams'), team);
+              if (email) {
+                await setDoc(doc(db, 'teams', newTeamRef.id, 'private', 'contact'), { email, password });
+              }
+              credsCollected.push({ name: team.name, email, password });
               count++;
               setImportStatus(prev => prev ? { ...prev, progress: count } : null);
             }
+            setImportedTeamCreds(credsCollected);
           }
           setImportStatus(prev => prev ? { ...prev, status: 'completed' } : null);
         } catch (err: any) {
@@ -951,13 +1199,6 @@ export default function App() {
     });
     // Reset input
     event.target.value = '';
-  };
-
-  const adjustBudget = async (teamId: string, amount: number) => {
-    await updateDoc(doc(db, 'teams', teamId), {
-      remainingBudget: increment(amount),
-      totalBudget: increment(amount)
-    });
   };
 
   const applyBudgetAdjust = async () => {
@@ -1043,8 +1284,17 @@ export default function App() {
     }
   };
 
-  const updateSettings = async (newSettings: AuctionSettings) => {
-    await setDoc(doc(db, 'auction', 'settings'), newSettings);
+  const updateSettingsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateSettings = (newSettings: AuctionSettings) => {
+    // Optimistically update local state immediately for responsive UI
+    setSettings(newSettings);
+    if (updateSettingsDebounceRef.current) clearTimeout(updateSettingsDebounceRef.current);
+    updateSettingsDebounceRef.current = setTimeout(() => {
+      setDoc(doc(db, 'auction', 'settings'), newSettings).catch(err => {
+        setError('Failed to save settings: ' + err.message);
+        setTimeout(() => setError(null), 3000);
+      });
+    }, 500);
   };
 
 
@@ -1119,18 +1369,22 @@ export default function App() {
     }
 
     try {
-      // Create user in Firebase Auth using a secondary app instance to avoid signing out the admin
-      const secondaryApp = initializeApp(firebaseConfig, `secondary-${Date.now()}`);
-      const secondaryAuth = getAuth(secondaryApp);
-      try {
-        await createUserWithEmailAndPassword(secondaryAuth, email, password);
-      } catch (authErr: any) {
-        // If user already exists, we can ignore it or handle it
-        if (authErr.code !== 'auth/email-already-in-use') {
-          throw authErr;
+      // Create Firebase Auth user via REST API — avoids secondary app interfering with admin auth
+      const apiKey = firebaseConfig.apiKey;
+      const res = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, returnSecureToken: false }),
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json();
+        if (err.error?.message !== 'EMAIL_EXISTS') {
+          throw new Error(err.error?.message || 'Failed to create auth account');
         }
       }
-      await deleteApp(secondaryApp);
 
       const captainId = formData.get('captainId') as string;
       const viceCaptainId = formData.get('viceCaptainId') as string;
@@ -1151,7 +1405,6 @@ export default function App() {
         logoUrl: logoUrl,
         mobileNumber: mobileNumber,
         email: email,
-        password: password,
         players: [],
         captainId,
         viceCaptainId
@@ -1159,6 +1412,8 @@ export default function App() {
       
       const newTeamRef = doc(collection(db, 'teams'));
       await setDoc(newTeamRef, teamData);
+      // Store email + password in admin-only private subcollection
+      await setDoc(doc(db, 'teams', newTeamRef.id, 'private', 'contact'), { email, password });
       
       setGeneratedTeamCreds({ mobile: mobileNumber, email: email, pass: password });
       setIsAddingTeam(false);
@@ -1168,12 +1423,11 @@ export default function App() {
   };
 
   const downloadTeamsCSV = () => {
-    const headers = ['Team Name', 'Email', 'Mobile Number', 'Password', 'Total Budget', 'Remaining Budget'];
+    const headers = ['Team Name', 'Email', 'Mobile Number', 'Total Budget', 'Remaining Budget'];
     const rows = teams.map(team => [
       team.name,
       team.email || '',
       team.mobileNumber || '',
-      team.password || 'N/A',
       team.totalBudget,
       team.remainingBudget
     ]);
@@ -1195,46 +1449,128 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const downloadImportedCredsCSV = (creds: { name: string; email: string; password: string }[]) => {
+    const headers = ['Team Name', 'Email', 'Password'];
+    const rows = creds.map(c => [c.name, c.email, c.password]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.setAttribute('href', URL.createObjectURL(blob));
+    link.setAttribute('download', 'imported_team_credentials.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const editTeam = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!editingTeam) return;
-    const formData = new FormData(e.currentTarget);
-    const imageFile = formData.get('imageFile') as File;
-    let logoUrl = formData.get('logoUrl') as string;
+    
+    try {
+      const formData = new FormData(e.currentTarget);
+      const imageFile = formData.get('imageFile') as File;
+      let logoUrl = formData.get('logoUrl') as string;
 
-    if (imageFile && imageFile.size > 0) {
-      logoUrl = await uploadImage(imageFile, 'teams');
+      if (imageFile && imageFile.size > 0) {
+        logoUrl = await uploadImage(imageFile, 'teams');
+      }
+
+      const captainId = formData.get('captainId') as string;
+      const viceCaptainId = formData.get('viceCaptainId') as string;
+
+      if (!captainId || !viceCaptainId) {
+        setError('Both Captain and Vice Captain must be selected.');
+        return;
+      }
+
+      if (captainId === viceCaptainId) {
+        setError('Captain and Vice Captain cannot be the same player.');
+        return;
+      }
+
+      const emailVal = formData.get('email') as string;
+      const team = {
+        name: formData.get('name') as string,
+        totalBudget: parseInt(formData.get('totalBudget') as string),
+        color: formData.get('color') as string,
+        logoUrl: logoUrl,
+        mobileNumber: formData.get('mobileNumber') as string,
+        captainId,
+        viceCaptainId,
+        ...(emailVal ? { email: emailVal } : {}),
+      };
+      
+      await updateDoc(doc(db, 'teams', editingTeam.id), team);
+      
+      // Update email in admin-only private subcollection (only if admin)
+      if (emailVal && userProfile?.role === 'admin') {
+        await setDoc(doc(db, 'teams', editingTeam.id, 'private', 'contact'), { email: emailVal }, { merge: true });
+      }
+      
+      setEditingTeam(null);
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.UPDATE, `teams/${editingTeam.id}`);
+      setError('Failed to update team: ' + err.message);
+      setTimeout(() => setError(null), 3000);
     }
-
-    const captainId = formData.get('captainId') as string;
-    const viceCaptainId = formData.get('viceCaptainId') as string;
-
-    if (!captainId || !viceCaptainId) {
-      setError('Both Captain and Vice Captain must be selected.');
-      return;
-    }
-
-    if (captainId === viceCaptainId) {
-      setError('Captain and Vice Captain cannot be the same player.');
-      return;
-    }
-
-    const team = {
-      name: formData.get('name') as string,
-      totalBudget: parseInt(formData.get('totalBudget') as string),
-      color: formData.get('color') as string,
-      logoUrl: logoUrl,
-      email: formData.get('email') as string,
-      mobileNumber: formData.get('mobileNumber') as string,
-      captainId,
-      viceCaptainId
-    };
-    await updateDoc(doc(db, 'teams', editingTeam.id), team);
-    setEditingTeam(null);
   };
 
-  const deletePlayer = async (id: string) => {
+  const bulkDeletePlayers = async () => {
+    if (selectedPlayerIds.length === 0) return;
     try {
+      const chunks = [];
+      for (let i = 0; i < selectedPlayerIds.length; i += 500) chunks.push(selectedPlayerIds.slice(i, i + 500));
+      for (const chunk of chunks) {
+        const batch = writeBatch(db);
+        chunk.forEach(id => {
+          const p = players.find(pl => pl.id === id);
+          batch.delete(doc(db, 'players', id));
+          if (p?.soldTo) {
+            batch.update(doc(db, 'teams', p.soldTo), {
+              players: arrayRemove(id),
+              remainingBudget: increment(p.soldPrice || 0)
+            });
+          }
+        });
+        await batch.commit();
+      }
+      setSelectedPlayerIds([]);
+      setIsSelectionMode(false);
+    } catch (err: any) {
+      setError('Bulk delete failed: ' + err.message);
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const bulkMarkUnsold = async () => {
+    if (selectedPlayerIds.length === 0) return;
+    try {
+      const chunks = [];
+      for (let i = 0; i < selectedPlayerIds.length; i += 500) chunks.push(selectedPlayerIds.slice(i, i + 500));
+      for (const chunk of chunks) {
+        const batch = writeBatch(db);
+        chunk.forEach(id => {
+          const p = players.find(pl => pl.id === id);
+          batch.update(doc(db, 'players', id), { status: 'Unsold', soldTo: deleteField(), soldPrice: deleteField() });
+          if (p?.soldTo) {
+            batch.update(doc(db, 'teams', p.soldTo), {
+              players: arrayRemove(id),
+              remainingBudget: increment(p.soldPrice || 0)
+            });
+          }
+        });
+        await batch.commit();
+      }
+      setSelectedPlayerIds([]);
+      setIsSelectionMode(false);
+    } catch (err: any) {
+      setError('Bulk update failed: ' + err.message);
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const deletePlayer = async (id: string) => {    try {
       const p = players.find(player => player.id === id);
       if (!p) return;
 
@@ -1257,9 +1593,31 @@ export default function App() {
 
   const deleteTeam = async (id: string) => {
     try {
+      const team = teams.find(t => t.id === id);
+
+      // Delete Firebase Auth account — sign in as the team user then delete
+      if (team?.email && team?.password) {
+        try {
+          const secondaryApp = initializeApp(firebaseConfig, `del-${Date.now()}`);
+          const secondaryAuth = getAuth(secondaryApp);
+          const { deleteUser } = await import('firebase/auth');
+          const cred = await signInWithEmailAndPassword(secondaryAuth, team.email, team.password);
+          await deleteUser(cred.user);
+          await deleteApp(secondaryApp);
+        } catch (_) {
+          // Non-fatal — Auth user may already be deleted or password stale
+        }
+      }
+
+      // Delete private subcollection doc first
+      try {
+        await deleteDoc(doc(db, 'teams', id, 'private', 'contact'));
+      } catch (_) {
+        // Non-fatal — may not exist for older teams
+      }
+
       const batch = writeBatch(db);
       batch.delete(doc(db, 'teams', id));
-
       players.filter(p => p.soldTo === id).forEach(player => {
         batch.update(doc(db, 'players', player.id), {
           status: 'Available',
@@ -1267,7 +1625,6 @@ export default function App() {
           soldPrice: deleteField()
         });
       });
-
       await batch.commit();
     } catch (err: any) {
       console.error("Delete team error:", err);
@@ -1366,8 +1723,35 @@ export default function App() {
   }
 
   if (view === 'portal') {
+    const scheduledMs = settings.scheduledStartTime;
+    const msUntilStart = scheduledMs ? scheduledMs - Date.now() : null;
+    const showCountdown = msUntilStart !== null && msUntilStart > 0 && auction.status === 'Idle';
+
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center p-4 gap-6">
+        {/* Header with branding */}
+        <div className="text-center mb-4">
+          <div className="flex items-center justify-center gap-3 mb-3">
+            <div className="w-12 h-12 bg-emerald-500 rounded-xl flex items-center justify-center">
+              <Trophy className="w-7 h-7 text-black" />
+            </div>
+            <h1 className="text-4xl font-black tracking-tight">CricAuction</h1>
+          </div>
+          <p className="text-white/40 text-sm">Select your portal to get started</p>
+        </div>
+
+        {/* Scheduled start countdown */}
+        {showCountdown && (
+          <div className="flex items-center gap-3 px-6 py-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl text-blue-400">
+            <Calendar className="w-4 h-4 flex-shrink-0" />
+            <span className="text-sm font-bold">Auction starts in <ScheduleCountdown targetMs={scheduledMs!} /></span>
+          </div>
+        )}
+        {/* Spectator count */}
+        <div className="flex items-center gap-2 text-white/20 text-xs font-bold">
+          <EyeIcon className="w-3.5 h-3.5" />
+          <span>{spectatorCount} {spectatorCount === 1 ? 'person' : 'people'} online</span>
+        </div>
         <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-3 gap-6">
           <button 
             onClick={() => setView('public')}
@@ -1377,7 +1761,12 @@ export default function App() {
               <Trophy className="w-8 h-8 text-emerald-500" />
             </div>
             <h2 className="text-2xl font-bold mb-2">Public View</h2>
-            <p className="text-white/40 text-sm">Watch the live auction as a spectator.</p>
+            <p className="text-white/40 text-sm mb-4">Watch the live auction as a spectator.</p>
+            <div className="text-xs text-white/20 space-y-1">
+              <p>• Real-time bidding updates</p>
+              <p>• Player statistics & history</p>
+              <p>• No login required</p>
+            </div>
             <ArrowRight className="w-5 h-5 mx-auto mt-6 text-white/20 group-hover:text-emerald-500 transition-colors" />
           </button>
 
@@ -1396,7 +1785,12 @@ export default function App() {
               <Shield className="w-8 h-8 text-blue-500" />
             </div>
             <h2 className="text-2xl font-bold mb-2">Team Portal</h2>
-            <p className="text-white/40 text-sm">Login as a team owner to place bids.</p>
+            <p className="text-white/40 text-sm mb-4">Login as a team owner to place bids.</p>
+            <div className="text-xs text-white/20 space-y-1">
+              <p>• Place bids on players</p>
+              <p>• Manage your squad</p>
+              <p>• Track budget & stats</p>
+            </div>
             <ArrowRight className="w-5 h-5 mx-auto mt-6 text-white/20 group-hover:text-blue-500 transition-colors" />
           </button>
 
@@ -1415,7 +1809,12 @@ export default function App() {
               <Settings className="w-8 h-8 text-purple-500" />
             </div>
             <h2 className="text-2xl font-bold mb-2">Admin Portal</h2>
-            <p className="text-white/40 text-sm">Manage players, teams, and settings.</p>
+            <p className="text-white/40 text-sm mb-4">Manage players, teams, and settings.</p>
+            <div className="text-xs text-white/20 space-y-1">
+              <p>• Control auction flow</p>
+              <p>• Add/edit players & teams</p>
+              <p>• Configure settings</p>
+            </div>
             <ArrowRight className="w-5 h-5 mx-auto mt-6 text-white/20 group-hover:text-purple-500 transition-colors" />
           </button>
         </div>
@@ -1427,46 +1826,54 @@ export default function App() {
     <div className="min-h-screen bg-[#0a0a0a] text-white font-sans selection:bg-emerald-500/30">
       {/* Navigation */}
       <nav className="border-b border-white/10 bg-black/50 backdrop-blur-md sticky top-0 z-50">
-        <div className="w-full max-w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('portal')}>
-            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-              <Trophy className="w-5 h-5 text-black" />
+        <div className="w-full max-w-full mx-auto px-3 sm:px-4 md:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 cursor-pointer flex-shrink-0" onClick={() => setView('portal')}>
+            <div className="w-7 h-7 sm:w-8 sm:h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
+              <Trophy className="w-4 h-4 sm:w-5 sm:h-5 text-black" />
             </div>
-            <span className="font-bold text-xl tracking-tight">CricAuction</span>
+            <span className="font-bold text-base sm:text-xl tracking-tight hidden xs:inline">CricAuction</span>
           </div>
           
-          <div className="flex items-center gap-4">
-            <span className="text-xs font-bold uppercase tracking-widest text-white/40">
+          <div className="flex items-center gap-1.5 sm:gap-2 md:gap-4">
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider sm:tracking-widest text-white/40 hidden sm:inline">
               {view === 'admin' ? 'Admin Mode' : view === 'team' ? 'Team Mode' : 'Live View'}
             </span>
             {user && (
               <button 
                 onClick={handleLogout}
-                className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all"
+                className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all"
               >
-                <LogOut className="w-3 h-3" /> Logout
+                <LogOut className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> 
+                <span className="hidden sm:inline">Logout</span>
               </button>
             )}
             <button 
               onClick={() => setView('portal')}
-              className="px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider bg-white/5 border border-white/10 hover:bg-white/10 transition-all"
+              className="px-2 sm:px-4 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold uppercase tracking-wider bg-white/5 border border-white/10 hover:bg-white/10 transition-all hidden md:block"
             >
               Switch Portal
+            </button>
+            <button
+              onClick={() => setSoundEnabled(v => !v)}
+              className="p-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-white/40 hover:text-white"
+              title={soundEnabled ? 'Mute sounds' : 'Enable sounds'}
+            >
+              {soundEnabled ? <Volume2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> : <VolumeX className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
             </button>
           </div>
         </div>
       </nav>
 
-      <main className="w-full min-h-screen mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="w-full min-h-screen mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 md:py-8">
         <AnimatePresence mode="wait">
           {error && (
             <motion.div 
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] bg-red-500/90 backdrop-blur-md text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-red-400/50"
+              className="fixed top-16 sm:top-20 left-1/2 -translate-x-1/2 z-[60] bg-red-500/90 backdrop-blur-md text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl shadow-2xl flex items-center gap-2 sm:gap-3 border border-red-400/50 max-w-[90vw] sm:max-w-md text-sm sm:text-base"
             >
-              <AlertCircle className="w-5 h-5" />
+              <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
               <span className="font-medium">{error}</span>
             </motion.div>
           )}
@@ -1605,6 +2012,12 @@ export default function App() {
                     </div>
                     <h3 className="text-2xl font-bold mb-2">Auction Idle</h3>
                     <p className="text-white/40 max-w-sm">Waiting for the administrator to select a player and start the next round.</p>
+                    {settings.scheduledStartTime && settings.scheduledStartTime > Date.now() && (
+                      <div className="mt-4 flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400 text-sm">
+                        <Calendar className="w-4 h-4" />
+                        <span>Starts in <ScheduleCountdown targetMs={settings.scheduledStartTime} /></span>
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
@@ -1614,6 +2027,9 @@ export default function App() {
                 <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
                   <User className="w-5 h-5 text-emerald-500" />
                   Player Pool
+                  <span className="ml-auto flex items-center gap-1.5 text-xs text-white/20 font-normal">
+                    <EyeIcon className="w-3.5 h-3.5" /> {spectatorCount} watching
+                  </span>
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {players.map(player => (
@@ -1657,12 +2073,33 @@ export default function App() {
                           >
                             View Profile <ChevronRight className="w-3 h-3" />
                           </button>
+                          <button
+                            onClick={() => {
+                              setComparePlayerIds(prev =>
+                                prev.includes(player.id)
+                                  ? prev.filter(id => id !== player.id)
+                                  : prev.length < 3 ? [...prev, player.id] : prev
+                              );
+                            }}
+                            className={cn(
+                              "text-[10px] font-bold uppercase flex items-center gap-1 transition-colors",
+                              comparePlayerIds.includes(player.id) ? "text-blue-400" : "text-white/30 hover:text-blue-400"
+                            )}
+                          >
+                            <GitCompare className="w-3 h-3" />
+                            {comparePlayerIds.includes(player.id) ? 'Added' : 'Compare'}
+                          </button>
                         </div>
                       </div>
                       
                       <div className="mt-4 pt-4 border-t border-white/5">
-                        <p className="text-[10px] text-white/40 uppercase font-bold mb-2">Performance Stats</p>
-                        <PlayerStatsChart stats={player.stats} />
+                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                          <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{player.stats.matches}</span> M</span>
+                          {player.stats.runs != null && <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{player.stats.runs}</span> R</span>}
+                          {player.stats.wickets != null && <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{player.stats.wickets}</span> W</span>}
+                          {player.stats.strikeRate != null && <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{player.stats.strikeRate}</span> SR</span>}
+                          {player.stats.economy != null && <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{player.stats.economy}</span> Eco</span>}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1677,6 +2114,31 @@ export default function App() {
                   <Shield className="w-5 h-5 text-emerald-500" />
                   Teams Standing
                 </h3>
+                {/* Budget leaderboard */}
+                <div className="mb-6 bg-white/5 rounded-2xl border border-white/10 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
+                    <BarChart2 className="w-4 h-4 text-yellow-400" />
+                    <span className="text-xs font-black uppercase tracking-widest text-white/40">Budget Leaderboard</span>
+                  </div>
+                  {[...teams].sort((a, b) => b.remainingBudget - a.remainingBudget).map((team, i) => {
+                    const pct = team.totalBudget > 0 ? (team.remainingBudget / team.totalBudget) * 100 : 0;
+                    return (
+                      <div key={team.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-white/5 last:border-0">
+                        <span className="text-xs font-black text-white/20 w-4">{i + 1}</span>
+                        <div className="w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center text-[9px] font-black text-white overflow-hidden" style={{ backgroundColor: team.color }}>
+                          {team.logoUrl ? <img src={team.logoUrl} className="w-full h-full object-cover" loading="lazy" /> : team.name[0]}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold truncate">{team.name}</p>
+                          <div className="w-full h-1 bg-white/10 rounded-full mt-1 overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: team.color }} />
+                          </div>
+                        </div>
+                        <span className="text-xs font-mono font-bold text-emerald-400 flex-shrink-0">₹{team.remainingBudget}L</span>
+                      </div>
+                    );
+                  })}
+                </div>
                 <div className="space-y-4">
                   {teams.map(team => (
                     <div key={team.id} className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden">
@@ -1685,7 +2147,7 @@ export default function App() {
                         <div className="flex justify-between items-center mb-4">
                           <div className="flex items-center gap-3">
                             {team.logoUrl ? (
-                              <img src={team.logoUrl} className="w-10 h-10 rounded-xl object-cover border border-white/10" referrerPolicy="no-referrer" />
+                              <img src={team.logoUrl} className="w-10 h-10 rounded-xl object-cover border border-white/10" referrerPolicy="no-referrer" loading="lazy" />
                             ) : (
                               <div className="w-10 h-10 rounded-xl border border-white/10 flex items-center justify-center text-lg font-black text-white" style={{ backgroundColor: team.color }}>
                                 {team.name[0]}
@@ -1755,12 +2217,29 @@ export default function App() {
                 >
                   <Plus className="w-4 h-4" /> {isGenerating ? 'Generating...' : 'Sample Data'}
                 </button>
+                {players.some(p => p.status === 'Unsold') && (
+                  <button
+                    onClick={reAuctionUnsold}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-yellow-500/10 text-yellow-400 rounded-xl border border-yellow-500/20 hover:bg-yellow-500/20 transition-all font-bold text-sm"
+                  >
+                    <RotateCcw className="w-4 h-4" /> Re-auction Unsold ({players.filter(p => p.status === 'Unsold').length})
+                  </button>
+                )}
                 <button 
                   onClick={() => setShowResetConfirm(true)}
                   className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-red-500/10 text-red-400 rounded-xl border border-red-500/20 hover:bg-red-500/20 transition-all font-bold text-sm shadow-lg shadow-red-500/5"
                 >
                   <RotateCcw className="w-4 h-4" /> Reset All
                 </button>
+                {teams.some(t => !t.email) && (
+                  <button
+                    onClick={backfillTeamEmails}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-orange-500/10 text-orange-400 rounded-xl border border-orange-500/20 hover:bg-orange-500/20 transition-all font-bold text-sm"
+                    title="Backfill email field on team docs missing it"
+                  >
+                    <Mail className="w-4 h-4" /> Fix Team Emails ({teams.filter(t => !t.email).length})
+                  </button>
+                )}
               </div>
             </header>
 
@@ -1838,11 +2317,12 @@ export default function App() {
             {/* Import Status Dialog */}
             <AnimatePresence>
               {importStatus && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setImportStatus(null)}>
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.9, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                    onClick={(e) => e.stopPropagation()}
                     className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl"
                   >
                     <div className="text-center mb-6">
@@ -1879,12 +2359,22 @@ export default function App() {
                     )}
 
                     {importStatus.status !== 'processing' && (
-                      <button 
-                        onClick={() => setImportStatus(null)}
-                        className="w-full py-4 bg-white/10 hover:bg-white/20 rounded-2xl font-bold transition-all border border-white/10"
-                      >
-                        Close
-                      </button>
+                      <div className="flex flex-col gap-3">
+                        {importStatus.status === 'completed' && importStatus.type === 'teams' && importedTeamCreds.length > 0 && (
+                          <button
+                            onClick={() => downloadImportedCredsCSV(importedTeamCreds)}
+                            className="w-full py-4 bg-emerald-500 text-black font-bold rounded-2xl hover:bg-emerald-400 transition-all flex items-center justify-center gap-2"
+                          >
+                            <Download className="w-5 h-5" /> Download Credentials CSV
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => setImportStatus(null)}
+                          className="w-full py-4 bg-white/10 hover:bg-white/20 rounded-2xl font-bold transition-all border border-white/10"
+                        >
+                          Close
+                        </button>
+                      </div>
                     )}
                   </motion.div>
                 </div>
@@ -1929,15 +2419,26 @@ export default function App() {
                       <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-end gap-3 w-full md:w-auto">
                         <div className="text-right">
                           <p className="text-[10px] text-white/40 font-bold uppercase mb-1">Status</p>
-                          <p className="text-lg font-bold text-white/60">{auction.status === 'Ended' ? 'Auction Ended' : 'Ready to Start'}</p>
+                          <p className="text-lg font-bold text-white/60">
+                            {auction.status === 'Ended' ? 'Auction Ended' : auction.status === 'Paused' ? 'Paused' : 'Ready to Start'}
+                          </p>
                         </div>
-                        <button 
-                          onClick={() => startAuction(currentPlayer.id)}
-                          className="px-6 md:px-8 py-2 md:py-3 bg-emerald-500 text-black rounded-xl font-bold hover:bg-emerald-400 transition-all flex items-center gap-2 text-sm md:text-base w-full md:w-auto justify-center"
-                        >
-                          <Play className="w-5 h-5 fill-current" /> Start Auction
-                        </button>
-                        <button 
+                        {auction.status === 'Paused' ? (
+                          <button
+                            onClick={resumeAuction}
+                            className="px-6 md:px-8 py-2 md:py-3 bg-yellow-500 text-black rounded-xl font-bold hover:bg-yellow-400 transition-all flex items-center gap-2 text-sm md:text-base w-full md:w-auto justify-center"
+                          >
+                            <Play className="w-5 h-5 fill-current" /> Resume
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => startAuction(currentPlayer.id)}
+                            className="px-6 md:px-8 py-2 md:py-3 bg-emerald-500 text-black rounded-xl font-bold hover:bg-emerald-400 transition-all flex items-center gap-2 text-sm md:text-base w-full md:w-auto justify-center"
+                          >
+                            <Play className="w-5 h-5 fill-current" /> Start Auction
+                          </button>
+                        )}
+                        <button
                           onClick={() => updateDoc(doc(db, 'auction', 'state'), { currentPlayerId: null, status: 'Idle' })}
                           className="p-3 bg-white/5 border border-white/10 rounded-xl text-white/40 hover:text-white transition-all"
                           title="Clear Selection"
@@ -1960,15 +2461,23 @@ export default function App() {
                         </div>
                         <div className="flex items-center gap-3">
                           <button 
-                            onClick={() => updateDoc(doc(db, 'auction', 'state'), { startTime: Date.now(), timeLeft: settings.timerDuration })}
+                            onClick={() => setShowResetTimerConfirm(true)}
                             className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-bold hover:bg-white/10 transition-all"
                           >
                             Reset Timer
                           </button>
-                          <button 
-                            onClick={endAuction}
-                            className="px-6 py-2 bg-red-500 text-black rounded-xl text-sm font-bold hover:bg-red-400 transition-all"
+                          <button
+                            onClick={pauseAuction}
+                            className="px-4 py-2 bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 rounded-xl text-sm font-bold hover:bg-yellow-500/20 transition-all"
                           >
+                            Pause
+                          </button>
+                          <div className="w-px h-8 bg-white/10" />
+                          <button 
+                            onClick={() => setShowEndAuctionConfirm(true)}
+                            className="px-6 py-2 bg-red-500 text-black rounded-xl text-sm font-bold hover:bg-red-400 transition-all flex items-center gap-2"
+                          >
+                            <AlertCircle className="w-4 h-4" />
                             End Auction
                           </button>
                         </div>
@@ -2013,6 +2522,28 @@ export default function App() {
                         className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-purple-500 transition-colors"
                       />
                     </div>
+                    <div>
+                      <label className="text-xs text-white/40 font-bold uppercase mb-2 block flex items-center gap-1">
+                        <Calendar className="w-3 h-3" /> Scheduled Start Time
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={settings.scheduledStartTime
+                          ? new Date(settings.scheduledStartTime - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+                          : ''}
+                        onChange={(e) => updateSettings({
+                          ...settings,
+                          scheduledStartTime: e.target.value ? new Date(e.target.value).getTime() : undefined
+                        })}
+                        className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                      />
+                      {settings.scheduledStartTime && settings.scheduledStartTime > Date.now() && (
+                        <p className="text-[10px] text-blue-400 mt-1 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          Starts in <ScheduleCountdown targetMs={settings.scheduledStartTime} />
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </section>
 
@@ -2030,6 +2561,15 @@ export default function App() {
                       >
                         <Download className="w-4 h-4" />
                       </button>
+                      {importedTeamCreds.length > 0 && (
+                        <button
+                          onClick={() => downloadImportedCredsCSV(importedTeamCreds)}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20 hover:bg-emerald-500/20 transition-all text-xs font-bold"
+                          title="Re-download imported team credentials"
+                        >
+                          <Download className="w-3.5 h-3.5" /> Credentials
+                        </button>
+                      )}
                       <button 
                         onClick={() => setIsAddingTeam(true)}
                         className="p-2 bg-blue-500/10 text-blue-400 rounded-lg border border-blue-500/20 hover:bg-blue-500/20 transition-all"
@@ -2055,7 +2595,7 @@ export default function App() {
                           <div className="flex items-center gap-3 min-w-0">
                             <div className="w-8 h-8 rounded-lg flex items-center justify-center border border-white/10 overflow-hidden flex-shrink-0" style={{ backgroundColor: team.color }}>
                               {team.logoUrl ? (
-                                <img src={team.logoUrl || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                <img src={team.logoUrl || null} className="w-full h-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
                               ) : (
                                 <Shield className="w-4 h-4 text-white" />
                               )}
@@ -2063,6 +2603,7 @@ export default function App() {
                             <span className="text-sm font-bold truncate text-white">{team.name}</span>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
+                            <button onClick={(e) => { e.stopPropagation(); setTeamCredsModal({ name: team.name, email: team.email || '', password: team.password || '' }); }} className="p-1.5 text-white/40 hover:text-yellow-400 transition-colors" title="View / Reset Credentials"><Lock className="w-3.5 h-3.5" /></button>
                             <button onClick={(e) => { e.stopPropagation(); setEditingTeam(team); }} className="p-1.5 text-white/40 hover:text-white transition-colors"><Settings className="w-3.5 h-3.5" /></button>
                             <button onClick={(e) => { e.stopPropagation(); setTeamToDelete(team.id); }} className="p-1.5 text-red-500/40 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                           </div>
@@ -2121,12 +2662,23 @@ export default function App() {
                           </div>
                         </div>
                         <button 
+                          onClick={() => { setIsSelectionMode(m => !m); setSelectedPlayerIds([]); }}
+                          className={cn(
+                            "flex items-center gap-2 px-4 py-2.5 sm:py-3.5 rounded-2xl transition-all font-bold text-xs sm:text-sm whitespace-nowrap border",
+                            isSelectionMode
+                              ? "bg-white/10 border-white/20 text-white"
+                              : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10"
+                          )}
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span className="hidden sm:inline">{isSelectionMode ? 'Cancel' : 'Select'}</span>
+                        </button>
+                        <button 
                           onClick={() => setIsAddingPlayer(true)}
                           className="flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3.5 bg-emerald-500 text-black rounded-2xl hover:bg-emerald-400 transition-all font-bold text-xs sm:text-sm whitespace-nowrap justify-center shadow-lg shadow-emerald-500/20 active:scale-95 flex-1 sm:flex-none"
                         >
                           <Plus className="w-4 sm:w-5 h-4 sm:h-5" /> <span className="hidden sm:inline">Add Player</span><span className="sm:hidden">Add</span>
-                        </button>
-                      </div>
+                        </button>                      </div>
                     </div>
 
                     <div className="relative w-full max-w-full">
@@ -2159,98 +2711,160 @@ export default function App() {
                     ))}
                   </div>
 
-                  {/* Advanced Filters & Sorting Row */}
-                  <div className="flex flex-col lg:flex-row gap-3 md:gap-4 mb-6 md:mb-8">
-                    <div className="flex flex-wrap items-center gap-3 md:gap-6 flex-1 p-3 md:p-5 bg-white/5 rounded-[2rem] border border-white/5 shadow-inner shadow-white/5 w-full md:w-auto">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
+                  {/* Advanced Filters & Sorting */}
+                  <div className="space-y-4 mb-6 md:mb-8">
+                    {/* Filters Section */}
+                    <div className="bg-white/5 rounded-2xl md:rounded-[2rem] border border-white/5 shadow-inner shadow-white/5 p-4 md:p-6">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center border border-white/10 flex-shrink-0">
                           <Filter className="w-4 h-4 text-emerald-500" />
                         </div>
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 whitespace-nowrap">Filters</span>
+                        <span className="text-xs md:text-sm font-black uppercase tracking-wider text-white/40">Filters</span>
                       </div>
                       
-                      <div className="h-8 w-px bg-white/10 hidden xl:block" />
-                      
-                      <div className="flex flex-wrap items-center gap-6 flex-1">
-                        <div className="flex items-center gap-4 flex-1 min-w-[180px] group">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-white/20 whitespace-nowrap group-focus-within:text-emerald-500/50 transition-colors">Min Runs</span>
-                          <div className="relative flex-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Min Runs Filter */}
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold uppercase tracking-wider text-white/30 block">
+                            Min Runs
+                          </label>
+                          <div className="relative">
                             <input 
                               type="number" 
                               value={minRuns}
                               onChange={(e) => setMinRuns(e.target.value === '' ? '' : parseInt(e.target.value))}
                               placeholder="0"
-                              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500/50 focus:bg-black/60 outline-none transition-all placeholder:text-white/10 font-mono"
+                              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500/50 focus:bg-black/60 outline-none transition-all placeholder:text-white/20 font-mono"
                             />
                             {minRuns !== '' && (
                               <button 
                                 onClick={() => setMinRuns('')}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-white/20 hover:text-white transition-colors"
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                                title="Clear"
                               >
-                                <RotateCcw className="w-3 h-3" />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             )}
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-4 flex-1 min-w-[180px] group">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-white/20 whitespace-nowrap group-focus-within:text-emerald-500/50 transition-colors">Max Wickets</span>
-                          <div className="relative flex-1">
+                        {/* Max Wickets Filter */}
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold uppercase tracking-wider text-white/30 block">
+                            Max Wickets
+                          </label>
+                          <div className="relative">
                             <input 
                               type="number" 
                               value={maxWickets}
                               onChange={(e) => setMaxWickets(e.target.value === '' ? '' : parseInt(e.target.value))}
                               placeholder="0"
-                              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500/50 focus:bg-black/60 outline-none transition-all placeholder:text-white/10 font-mono"
+                              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-emerald-500/50 focus:bg-black/60 outline-none transition-all placeholder:text-white/20 font-mono"
                             />
                             {maxWickets !== '' && (
                               <button 
                                 onClick={() => setMaxWickets('')}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-white/20 hover:text-white transition-colors"
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-white/30 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                                title="Clear"
                               >
-                                <RotateCcw className="w-3 h-3" />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             )}
                           </div>
                         </div>
                       </div>
+
+                      {/* Clear Filters Button */}
+                      {(minRuns !== '' || maxWickets !== '') && (
+                        <button
+                          onClick={() => {
+                            setMinRuns('');
+                            setMaxWickets('');
+                          }}
+                          className="mt-4 flex items-center gap-2 px-4 py-2 text-xs font-bold text-white/60 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          Clear Filters
+                        </button>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-3 md:gap-6 p-3 md:p-5 bg-white/5 rounded-[2rem] border border-white/5 shadow-inner shadow-white/5 w-full flex-wrap md:flex-nowrap">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
+                    {/* Sorting Section */}
+                    <div className="bg-white/5 rounded-2xl md:rounded-[2rem] border border-white/5 shadow-inner shadow-white/5 p-4 md:p-6">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center border border-white/10 flex-shrink-0">
                           <ArrowUpDown className="w-4 h-4 text-blue-500" />
                         </div>
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 whitespace-nowrap">Sort By</span>
+                        <span className="text-xs md:text-sm font-black uppercase tracking-wider text-white/40">Sort By</span>
                       </div>
                       
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <select 
-                            value={sortBy}
-                            onChange={(e) => setSortBy(e.target.value as any)}
-                            className="bg-black/40 border border-white/10 rounded-xl pl-4 pr-10 py-2.5 text-xs font-bold focus:border-blue-500/50 outline-none transition-all appearance-none cursor-pointer hover:bg-black/60"
-                          >
-                            <option value="name" className="bg-gray-800 text-white">Name</option>
-                            <option value="basePrice" className="bg-gray-800 text-white">Base Price</option>
-                            <option value="runs" className="bg-gray-800 text-white">Runs</option>
-                            <option value="wickets" className="bg-gray-800 text-white">Wickets</option>
-                          </select>
-                          <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        {/* Sort Field */}
+                        <div className="flex-1">
+                          <div className="relative">
+                            <select 
+                              value={sortBy}
+                              onChange={(e) => setSortBy(e.target.value as any)}
+                              className="w-full bg-black/40 border border-white/10 rounded-xl pl-4 pr-10 py-2.5 text-sm font-bold focus:border-blue-500/50 outline-none transition-all appearance-none cursor-pointer hover:bg-black/60"
+                            >
+                              <option value="name" className="bg-gray-800 text-white">Name</option>
+                              <option value="basePrice" className="bg-gray-800 text-white">Base Price</option>
+                              <option value="runs" className="bg-gray-800 text-white">Runs</option>
+                              <option value="wickets" className="bg-gray-800 text-white">Wickets</option>
+                            </select>
+                            <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
+                          </div>
                         </div>
+
+                        {/* Sort Order */}
                         <button 
                           onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-                          className="p-2.5 bg-black/40 border border-white/10 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all group"
-                          title={sortOrder === 'asc' ? 'Sort Descending' : 'Sort Ascending'}
+                          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all group sm:w-auto"
+                          title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
                         >
                           <ArrowUpDown className={cn("w-4 h-4 transition-transform duration-300", sortOrder === 'desc' ? "rotate-180 text-blue-400" : "text-white/40")} />
+                          <span className="text-sm font-bold text-white/60 group-hover:text-white transition-colors">
+                            {sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+                          </span>
                         </button>
                       </div>
                     </div>
                   </div>
 
-                  {filteredPlayers.length === 0 ? (
-                    <div className="py-12 md:py-20 text-center border border-dashed border-white/10 rounded-[2rem] px-4 md:px-0">
+                  {/* Bulk action bar */}
+                  {isSelectionMode && (
+                    <div className="flex items-center justify-between gap-3 mb-4 p-3 bg-white/5 rounded-2xl border border-white/10">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setSelectedPlayerIds(filteredPlayers.map(p => p.id))}
+                          className="text-xs font-bold text-white/60 hover:text-white transition-colors"
+                        >
+                          Select All ({filteredPlayers.length})
+                        </button>
+                        {selectedPlayerIds.length > 0 && (
+                          <span className="text-xs text-emerald-400 font-bold">{selectedPlayerIds.length} selected</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={bulkMarkUnsold}
+                          disabled={selectedPlayerIds.length === 0}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 rounded-xl hover:bg-yellow-500/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <RotateCcw className="w-3 h-3" /> Mark Unsold
+                        </button>
+                        <button
+                          onClick={bulkDeletePlayers}
+                          disabled={selectedPlayerIds.length === 0}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl hover:bg-red-500/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <Trash2 className="w-3 h-3" /> Delete Selected
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {filteredPlayers.length === 0 ? (                    <div className="py-12 md:py-20 text-center border border-dashed border-white/10 rounded-[2rem] px-4 md:px-0">
                       <div className="w-12 md:w-16 h-12 md:h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
                         <Search className="w-6 md:w-8 h-6 md:h-8 text-white/10" />
                       </div>
@@ -2269,8 +2883,9 @@ export default function App() {
                       </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
-                      {filteredPlayers.map(player => (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
+                        {paginatedPlayers.map(player => (
                         <motion.div 
                           layout
                           key={player.id} 
@@ -2332,6 +2947,18 @@ export default function App() {
                               )}>
                                 {player.status === 'Available' ? 'Avail' : player.status === 'Sold' ? 'Sold' : 'Unsold'}
                               </span>
+                              {player.status === 'Available' && !isSelectionMode && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startAuction(player.id);
+                                  }}
+                                  className="p-1 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded transition-colors"
+                                  title="Start Auction"
+                                >
+                                  <Play className="w-3 h-3 fill-current" />
+                                </button>
+                              )}
                               <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -2349,6 +2976,60 @@ export default function App() {
                         </motion.div>
                       ))}
                     </div>
+
+                    {/* Pagination Controls */}
+                    {totalPages > 1 && (
+                      <div className="mt-6 sm:mt-8 space-y-3">
+                        <p className="text-xs sm:text-sm text-white/40 text-center sm:text-left">
+                          Showing {((playersPage - 1) * playersPerPage) + 1}-{Math.min(playersPage * playersPerPage, filteredPlayers.length)} of {filteredPlayers.length} players
+                        </p>
+                        <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-3">
+                          <button
+                            onClick={() => setPlayersPage(p => Math.max(1, p - 1))}
+                            disabled={playersPage === 1}
+                            className="w-full sm:w-auto px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm font-bold hover:bg-white/10 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            Previous
+                          </button>
+                          <div className="flex items-center gap-1 sm:gap-2">
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                              let pageNum;
+                              if (totalPages <= 5) {
+                                pageNum = i + 1;
+                              } else if (playersPage <= 3) {
+                                pageNum = i + 1;
+                              } else if (playersPage >= totalPages - 2) {
+                                pageNum = totalPages - 4 + i;
+                              } else {
+                                pageNum = playersPage - 2 + i;
+                              }
+                              return (
+                                <button
+                                  key={pageNum}
+                                  onClick={() => setPlayersPage(pageNum)}
+                                  className={cn(
+                                    "w-9 h-9 sm:w-10 sm:h-10 rounded-lg text-xs sm:text-sm font-bold transition-all",
+                                    playersPage === pageNum
+                                      ? "bg-emerald-500 text-black"
+                                      : "bg-white/5 border border-white/10 hover:bg-white/10"
+                                  )}
+                                >
+                                  {pageNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <button
+                            onClick={() => setPlayersPage(p => Math.min(totalPages, p + 1))}
+                            disabled={playersPage === totalPages}
+                            className="w-full sm:w-auto px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm font-bold hover:bg-white/10 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    </>
                   )}
                 </section>
               </div>
@@ -2357,11 +3038,12 @@ export default function App() {
             {/* Modals for CRUD */}
             <AnimatePresence>
               {(isAddingPlayer || editingPlayer) && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl" onClick={() => { setIsAddingPlayer(false); setEditingPlayer(null); }}>
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.95, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                    onClick={(e) => e.stopPropagation()}
                     className="bg-[#121212] border border-white/10 rounded-[2.5rem] p-10 max-w-xl w-full shadow-2xl relative overflow-hidden"
                   >
                     {/* Decorative background element */}
@@ -2405,7 +3087,7 @@ export default function App() {
                                 <option value="Batsman" className="bg-gray-800 text-white">Batsman</option>
                                 <option value="Bowler" className="bg-gray-800 text-white">Bowler</option>
                                 <option value="All-Rounder" className="bg-gray-800 text-white">All-Rounder</option>
-                                <option value="Wicketkeeper" className="bg-gray-800 text-white">Wicketkeeper</option>
+                                <option value="Wicket-Keeper" className="bg-gray-800 text-white">Wicket-Keeper</option>
                               </select>
                               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20 pointer-events-none" />
                             </div>
@@ -2502,11 +3184,12 @@ export default function App() {
               )}
 
               {(isAddingTeam || editingTeam) && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => { setIsAddingTeam(false); setEditingTeam(null); }}>
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
+                    onClick={(e) => e.stopPropagation()}
                     className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl"
                   >
                     <h3 className="text-2xl font-bold mb-6">{editingTeam ? 'Edit Team' : 'Add New Team'}</h3>
@@ -2588,11 +3271,12 @@ export default function App() {
                 </div>
               )}
               {playerToDelete && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setPlayerToDelete(null)}>
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
+                    onClick={(e) => e.stopPropagation()}
                     className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
                   >
                     <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -2618,11 +3302,12 @@ export default function App() {
                 </div>
               )}
               {teamToDelete && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setTeamToDelete(null)}>
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
+                    onClick={(e) => e.stopPropagation()}
                     className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
                   >
                     <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -2648,11 +3333,12 @@ export default function App() {
                 </div>
               )}
               {showResetConfirm && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setShowResetConfirm(false)}>
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
+                    onClick={(e) => e.stopPropagation()}
                     className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
                   >
                     <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -2688,11 +3374,97 @@ export default function App() {
                   </motion.div>
                 </div>
               )}
-              {generatedTeamCreds && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+
+              {/* End Auction Confirmation */}
+              {showEndAuctionConfirm && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setShowEndAuctionConfirm(false)}>
                   <motion.div 
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-[#1a1a1a] border border-red-500/30 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+                  >
+                    <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <AlertCircle className="w-8 h-8 text-red-500" />
+                    </div>
+                    <h3 className="text-2xl font-bold mb-2">End Auction Now?</h3>
+                    <p className="text-white/60 mb-2">
+                      This will finalize the current auction for <strong className="text-white">{currentPlayer?.name}</strong>.
+                    </p>
+                    {auction.highestBidderId ? (
+                      <p className="text-emerald-400 text-sm mb-8">
+                        Player will be sold to <strong>{highestBidder?.name}</strong> for ₹{auction.highestBid}L
+                      </p>
+                    ) : (
+                      <p className="text-amber-400 text-sm mb-8">
+                        Player will be marked as <strong>Unsold</strong>
+                      </p>
+                    )}
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => setShowEndAuctionConfirm(false)}
+                        className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 font-bold hover:bg-white/10 transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        onClick={() => {
+                          endAuction();
+                          setShowEndAuctionConfirm(false);
+                        }}
+                        className="flex-1 px-4 py-3 rounded-xl bg-red-500 text-white font-bold hover:bg-red-400 transition-all"
+                      >
+                        End Now
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+
+              {/* Reset Timer Confirmation */}
+              {showResetTimerConfirm && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setShowResetTimerConfirm(false)}>
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-[#1a1a1a] border border-blue-500/30 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+                  >
+                    <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <Timer className="w-8 h-8 text-blue-500" />
+                    </div>
+                    <h3 className="text-2xl font-bold mb-2">Reset Timer?</h3>
+                    <p className="text-white/60 mb-8">
+                      This will reset the auction timer to <strong className="text-white">{settings.timerDuration} seconds</strong> and restart the countdown.
+                    </p>
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => setShowResetTimerConfirm(false)}
+                        className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 font-bold hover:bg-white/10 transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        onClick={() => {
+                          updateDoc(doc(db, 'auction', 'state'), { startTime: Date.now(), timeLeft: settings.timerDuration });
+                          setShowResetTimerConfirm(false);
+                        }}
+                        className="flex-1 px-4 py-3 rounded-xl bg-blue-500 text-white font-bold hover:bg-blue-400 transition-all"
+                      >
+                        Reset Timer
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+              {generatedTeamCreds && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setGeneratedTeamCreds(null)}>
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    onClick={(e) => e.stopPropagation()}
                     className="bg-[#1a1a1a] border border-emerald-500/30 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
                   >
                     <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -2726,6 +3498,65 @@ export default function App() {
                     >
                       Got it
                     </button>
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(`🏏 CricAuction Login\n\nTeam: ${generatedTeamCreds.email.split('@')[0]}\nEmail: ${generatedTeamCreds.email}\nPassword: ${generatedTeamCreds.pass}\nLogin: ${window.location.origin}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3 rounded-xl bg-[#25D366]/10 border border-[#25D366]/30 text-[#25D366] font-bold hover:bg-[#25D366]/20 transition-all flex items-center justify-center gap-2"
+                    >
+                      <MessageCircle className="w-4 h-4" /> Share via WhatsApp
+                    </a>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* Team Credentials Modal */}
+            <AnimatePresence>
+              {teamCredsModal && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setTeamCredsModal(null)}>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl"
+                  >
+                    <div className="w-14 h-14 bg-yellow-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <Lock className="w-7 h-7 text-yellow-400" />
+                    </div>
+                    <h3 className="text-xl font-bold text-center mb-1">{teamCredsModal.name}</h3>
+                    <p className="text-white/40 text-xs text-center mb-6">Login credentials — share with team owner</p>
+
+                    <div className="bg-black/40 rounded-2xl border border-white/10 p-4 space-y-3 mb-6">
+                      <div>
+                        <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Email</p>
+                        <p className="font-mono text-sm text-emerald-400 break-all">{teamCredsModal.email || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-white/40 uppercase font-bold mb-1">Password</p>
+                        {teamCredsModal.password ? (
+                          <p className="font-mono text-sm text-emerald-400">{teamCredsModal.password}</p>
+                        ) : (
+                          <p className="text-xs text-white/30 italic">Not on record — use Reset to generate a new one</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      <button
+                        onClick={() => resetTeamPassword(teams.find(t => t.name === teamCredsModal.name && t.email === teamCredsModal.email)!)}
+                        className="w-full py-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 font-bold hover:bg-yellow-500/20 transition-all flex items-center justify-center gap-2"
+                      >
+                        <RotateCcw className="w-4 h-4" /> Reset Password
+                      </button>
+                      <button
+                        onClick={() => setTeamCredsModal(null)}
+                        className="w-full py-3 rounded-xl bg-white/5 border border-white/10 font-bold hover:bg-white/10 transition-all"
+                      >
+                        Close
+                      </button>
+                    </div>
                   </motion.div>
                 </div>
               )}
@@ -2756,7 +3587,8 @@ export default function App() {
                   {teams.find(t => t.id === userProfile.teamId)?.logoUrl && (
                     <img 
                       src={teams.find(t => t.id === userProfile.teamId)?.logoUrl || null} 
-                      className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl object-cover border-2 flex-shrink-0 shadow-xl" 
+                      className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl object-cover border-2 flex-shrink-0 shadow-xl"
+                      loading="lazy"
                       style={{ borderColor: `${teams.find(t => t.id === userProfile.teamId)?.color || '#10b981'}40` }}
                       referrerPolicy="no-referrer" 
                     />
@@ -2838,6 +3670,20 @@ export default function App() {
                             <AlertCircle className="w-5 h-5 flex-shrink-0" />
                             <p className="text-sm font-bold uppercase tracking-wider">Squad Full! You have reached the maximum limit of {settings.maxPlayersPerTeam} players.</p>
                           </div>
+                        )}
+                        {/* You're winning banner */}
+                        {auction.highestBidderId === userProfile.teamId && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="mb-6 p-4 bg-emerald-500 rounded-2xl flex items-center gap-3 shadow-xl shadow-emerald-500/30"
+                          >
+                            <Trophy className="w-6 h-6 text-black flex-shrink-0" />
+                            <div>
+                              <p className="text-black font-black uppercase tracking-widest text-sm">You're Winning!</p>
+                              <p className="text-black/70 text-xs font-bold">Highest bid: ₹{auction.highestBid}L — hold on until the timer runs out.</p>
+                            </div>
+                          </motion.div>
                         )}
                         <div className="flex items-center justify-between mb-6">
                           <div className="flex items-center gap-3 sm:gap-4">
@@ -3014,17 +3860,90 @@ export default function App() {
                         </div>
                       </section>
                     ) : (
-                      <div className="h-48 sm:h-64 bg-white/5 rounded-2xl sm:rounded-3xl border border-white/10 flex flex-col items-center justify-center text-center p-6 sm:p-8">
-                        <Coins className="w-12 h-12 text-white/10 mb-4" />
-                        <h3 className="text-xl font-bold">No Active Auction</h3>
-                        <p className="text-white/40 text-sm">Wait for the admin to start a new round.</p>
+                      <div className="bg-white/5 rounded-2xl sm:rounded-3xl border border-white/10 p-6 sm:p-8">
+                        {auction.status === 'Paused' ? (
+                          <div className="text-center py-8">
+                            <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                              <Timer className="w-8 h-8 text-yellow-400" />
+                            </div>
+                            <h3 className="text-2xl font-bold text-yellow-400 mb-2">Auction Paused</h3>
+                            <p className="text-white/40 text-sm">The admin has paused the auction. Stand by.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-6">
+                            <div className="text-center py-6">
+                              <Coins className="w-16 h-16 text-white/10 mx-auto mb-4" />
+                              <h3 className="text-2xl font-bold mb-2">No Active Auction</h3>
+                              <p className="text-white/40 text-sm mb-6">Waiting for the admin to start the next round.</p>
+                            </div>
+                            
+                            {/* Useful idle state information */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Users className="w-4 h-4 text-blue-400" />
+                                  <p className="text-xs text-white/40 uppercase font-bold">Squad Size</p>
+                                </div>
+                                <p className="text-2xl font-bold">
+                                  {teams.find(t => t.id === userProfile.teamId)?.players.length || 0}
+                                  <span className="text-sm text-white/40 ml-1">/ {settings.maxPlayersPerTeam}</span>
+                                </p>
+                                <p className="text-xs text-white/30 mt-1">
+                                  {settings.maxPlayersPerTeam - (teams.find(t => t.id === userProfile.teamId)?.players.length || 0)} slots remaining
+                                </p>
+                              </div>
+                              
+                              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                                  <p className="text-xs text-white/40 uppercase font-bold">Available Players</p>
+                                </div>
+                                <p className="text-2xl font-bold text-emerald-400">
+                                  {players.filter(p => p.status === 'Available').length}
+                                </p>
+                                <p className="text-xs text-white/30 mt-1">
+                                  {players.filter(p => p.status === 'Sold').length} sold, {players.filter(p => p.status === 'Unsold').length} unsold
+                                </p>
+                              </div>
+                            </div>
+
+                            {budgetProjection && (
+                              <div className="bg-blue-500/5 rounded-xl p-4 border border-blue-500/20">
+                                <div className="flex items-center gap-2 mb-3">
+                                  <Calculator className="w-4 h-4 text-blue-400" />
+                                  <p className="text-xs text-blue-400 uppercase font-bold">Budget Projection</p>
+                                </div>
+                                <div className="space-y-2 text-sm">
+                                  <div className="flex justify-between">
+                                    <span className="text-white/60">Avg. base price:</span>
+                                    <span className="font-mono font-bold">₹{Math.round(budgetProjection.avgBasePrice)}L</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-white/60">Can afford ~</span>
+                                    <span className="font-mono font-bold text-emerald-400">{budgetProjection.canAffordCount} players</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-white/60">Recommended buys:</span>
+                                    <span className="font-mono font-bold text-blue-400">{budgetProjection.recommendedCount} players</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="text-center pt-4">
+                              <p className="text-xs text-white/20">
+                                You'll be notified when the next auction begins
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
                     {/* Confirmation Dialog */}
                     <AnimatePresence>
                       {showConfirmBid && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => { setShowConfirmBid(false); setPendingBidAmount(null); }}>
                           <motion.div 
                             initial={{ opacity: 0, scale: 0.9, y: 20 }}
                             animate={{ 
@@ -3038,6 +3957,7 @@ export default function App() {
                               }
                             }}
                             exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                            onClick={(e) => e.stopPropagation()}
                             className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
                           >
                             <div className="w-24 h-24 rounded-2xl overflow-hidden border border-white/10 mx-auto mb-4 shadow-xl">
@@ -3074,6 +3994,24 @@ export default function App() {
                                 </div>
                               </div>
                             </div>
+                            {/* Budget warning */}
+                            {(() => {
+                              const myTeam = teams.find(t => t.id === userProfile.teamId);
+                              const afterBid = (myTeam?.remainingBudget || 0) - (pendingBidAmount || 0);
+                              const slotsLeft = Math.max(0, settings.maxPlayersPerTeam - (myTeam?.players.length || 0) - 1);
+                              const availPlayers = players.filter(p => p.status === 'Available');
+                              const avgBase = availPlayers.length > 0 ? availPlayers.reduce((s, p) => s + p.basePrice, 0) / availPlayers.length : 0;
+                              const canAfford = avgBase > 0 ? Math.floor(afterBid / avgBase) : slotsLeft;
+                              if (slotsLeft > 0 && canAfford < slotsLeft) {
+                                return (
+                                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2 text-amber-400 text-xs">
+                                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                    <span>This bid leaves ₹{afterBid}L for {slotsLeft} remaining slot{slotsLeft > 1 ? 's' : ''} (avg base ₹{Math.round(avgBase)}L). You may not afford all slots.</span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
                             <div className="flex gap-3">
                               <button onClick={() => setShowConfirmBid(false)} className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 font-bold hover:bg-white/10 transition-all">Cancel</button>
                               <button onClick={confirmBid} className="flex-1 px-4 py-3 rounded-xl bg-emerald-500 text-black font-bold hover:bg-emerald-400 transition-all">Confirm Bid</button>
@@ -3191,14 +4129,100 @@ export default function App() {
             )}
           </div>
         )}
+        {/* Compare floating bar */}
+        {comparePlayerIds.length >= 2 && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 bg-[#1a1a1a] border border-blue-500/30 rounded-2xl shadow-2xl shadow-blue-500/10">
+            <GitCompare className="w-4 h-4 text-blue-400" />
+            <span className="text-sm font-bold text-white/70">{comparePlayerIds.length} players selected</span>
+            <button
+              onClick={() => setShowCompareModal(true)}
+              className="px-4 py-1.5 bg-blue-500 text-white text-xs font-bold rounded-xl hover:bg-blue-400 transition-all"
+            >
+              Compare
+            </button>
+            <button onClick={() => setComparePlayerIds([])} className="text-white/30 hover:text-white transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Player Comparison Modal */}
+        <AnimatePresence>
+          {showCompareModal && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md" onClick={() => setShowCompareModal(false)}>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-[#1a1a1a] border border-white/10 rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl"
+              >
+                <div className="flex items-center justify-between p-6 border-b border-white/10">
+                  <div className="flex items-center gap-2">
+                    <GitCompare className="w-5 h-5 text-blue-400" />
+                    <h3 className="text-xl font-bold">Player Comparison</h3>
+                  </div>
+                  <button onClick={() => setShowCompareModal(false)} className="p-2 text-white/40 hover:text-white transition-colors">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-6">
+                  {/* Player headers */}
+                  <div className={cn("grid gap-4 mb-6", comparePlayerIds.length === 2 ? "grid-cols-2" : "grid-cols-3")}>
+                    {comparePlayerIds.map(pid => {
+                      const p = players.find(pl => pl.id === pid);
+                      if (!p) return null;
+                      return (
+                        <div key={pid} className="text-center">
+                          <div className="w-20 h-20 rounded-2xl overflow-hidden border border-white/10 mx-auto mb-3">
+                            <PlayerAvatar playerId={p.id} imageUrl={p.imageUrl} name={p.name} teams={teams} className="w-full h-full object-cover" badgeSize="sm" />
+                          </div>
+                          <p className="font-bold text-sm">{p.name}</p>
+                          <p className="text-xs text-white/40">{p.category}</p>
+                          <p className="text-xs font-mono text-emerald-400 mt-1">Base ₹{p.basePrice}L</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Stat rows */}
+                  {(['matches', 'runs', 'wickets', 'strikeRate', 'economy'] as const).map(stat => {
+                    const vals = comparePlayerIds.map(pid => players.find(pl => pl.id === pid)?.stats[stat] ?? null);
+                    const max = Math.max(...vals.filter(v => v !== null) as number[]);
+                    const labels: Record<string, string> = { matches: 'Matches', runs: 'Runs', wickets: 'Wickets', strikeRate: 'Strike Rate', economy: 'Economy' };
+                    return (
+                      <div key={stat} className="mb-3">
+                        <p className="text-[10px] text-white/30 uppercase font-bold mb-2">{labels[stat]}</p>
+                        <div className={cn("grid gap-4", comparePlayerIds.length === 2 ? "grid-cols-2" : "grid-cols-3")}>
+                          {vals.map((val, i) => (
+                            <div key={i} className={cn("p-3 rounded-xl border text-center", val === max && max > 0 ? "bg-emerald-500/10 border-emerald-500/30" : "bg-white/5 border-white/10")}>
+                              <p className={cn("text-lg font-mono font-bold", val === max && max > 0 ? "text-emerald-400" : "text-white/60")}>
+                                {val ?? '—'}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="p-6 border-t border-white/10 flex justify-between">
+                  <button onClick={() => setComparePlayerIds([])} className="px-4 py-2 text-sm text-white/40 hover:text-white transition-colors">Clear Selection</button>
+                  <button onClick={() => setShowCompareModal(false)} className="px-6 py-2 bg-white/10 rounded-xl font-bold text-sm hover:bg-white/20 transition-all">Close</button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
         {/* Player Profile Modal */}
         <AnimatePresence>
           {selectedPlayerProfile && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md" onClick={() => setSelectedPlayerProfile(null)}>
               <motion.div 
                 initial={{ opacity: 0, y: 50 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 50 }}
+                onClick={(e) => e.stopPropagation()}
                 className="bg-[#121212] border border-white/10 rounded-[2.5rem] max-w-2xl w-full overflow-hidden shadow-2xl relative"
               >
                 <button 
@@ -3336,18 +4360,19 @@ export default function App() {
             const isInvalid = previewRemaining < 0;
 
             return (
-              <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+              <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => { setShowBudgetAdjust(false); setBudgetAdjustTeamId(null); }}>
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9, y: 20 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                  onClick={(e) => e.stopPropagation()}
                   className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl"
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black border border-white/10 overflow-hidden" style={{ backgroundColor: team.color }}>
-                        {team.logoUrl ? <img src={team.logoUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : team.name[0]}
+                        {team.logoUrl ? <img src={team.logoUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : team.name[0]}
                       </div>
                       <div>
                         <h3 className="text-lg font-bold">Adjust Budget</h3>
@@ -3503,11 +4528,12 @@ export default function App() {
         {/* Admin Live Bid Adjustment Modal */}
         <AnimatePresence>
           {showBidAdjust && bidAdjustTeamId && (
-            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => { setShowBidAdjust(false); setBidAdjustTeamId(null); setBidAdjustAmount(''); }}>
               <motion.div
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                onClick={(e) => e.stopPropagation()}
                 className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl"
               >
                 <div className="flex items-center justify-between mb-6">
@@ -3523,7 +4549,7 @@ export default function App() {
                     <div className="space-y-5">
                       <div className="flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/10">
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black border border-white/10" style={{ backgroundColor: team?.color }}>
-                          {team?.logoUrl ? <img src={team.logoUrl} className="w-full h-full object-cover rounded-xl" referrerPolicy="no-referrer" /> : team?.name[0]}
+                          {team?.logoUrl ? <img src={team.logoUrl} className="w-full h-full object-cover rounded-xl" referrerPolicy="no-referrer" loading="lazy" /> : team?.name[0]}
                         </div>
                         <div>
                           <p className="font-bold text-white">{team?.name}</p>
@@ -3591,53 +4617,70 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {/* Next Player Prompt */}
-        {showNextPlayerPrompt && nextPlayerId && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        {/* Next Player Toast (Non-blocking) */}
+        <AnimatePresence>
+          {showNextPlayerPrompt && nextPlayerId && (
             <motion.div 
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="bg-zinc-900 border border-white/10 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl"
+              initial={{ opacity: 0, y: 50, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              className="fixed bottom-6 right-6 z-[100] max-w-md w-full"
             >
-              <div className="w-24 h-24 rounded-2xl overflow-hidden border border-white/10 mx-auto mb-6">
-                {(() => {
-                  const np = players.find(p => p.id === nextPlayerId);
-                  return np ? (
-                    <PlayerAvatar
-                      playerId={np.id}
-                      imageUrl={np.imageUrl}
-                      name={np.name}
-                      teams={teams}
-                      className="w-full h-full object-cover"
-                      badgeSize="sm"
-                    />
-                  ) : null;
-                })()}
-              </div>
-              <h3 className="text-2xl font-bold mb-2">Select Next Player?</h3>
-              <p className="text-white/40 mb-8">
-                The auction for {currentPlayer?.name} has ended. Would you like to select <strong>{players.find(p => p.id === nextPlayerId)?.name}</strong> for the next auction?
-              </p>
-              <div className="flex gap-4">
-                <button 
-                  onClick={() => setShowNextPlayerPrompt(false)}
-                  className="flex-1 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-bold transition-all"
-                >
-                  No, Thanks
-                </button>
-                <button 
-                  onClick={() => {
-                    updateDoc(doc(db, 'auction', 'state'), { currentPlayerId: nextPlayerId, status: 'Idle' });
-                    setShowNextPlayerPrompt(false);
-                  }}
-                  className="flex-1 py-3 bg-emerald-500 text-black rounded-xl font-bold hover:bg-emerald-400 transition-all"
-                >
-                  Yes, Select
-                </button>
+              <div className="bg-zinc-900 border border-emerald-500/30 p-6 rounded-2xl shadow-2xl shadow-emerald-500/10">
+                <div className="flex items-start gap-4">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden border border-white/10 flex-shrink-0">
+                    {(() => {
+                      const np = players.find(p => p.id === nextPlayerId);
+                      return np ? (
+                        <PlayerAvatar
+                          playerId={np.id}
+                          imageUrl={np.imageUrl}
+                          name={np.name}
+                          teams={teams}
+                          className="w-full h-full object-cover"
+                          badgeSize="xs"
+                        />
+                      ) : null;
+                    })()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <h4 className="text-sm font-bold text-emerald-400 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5" /> Auto-starting next player in 4s...
+                      </h4>
+                      <button 
+                        onClick={() => setShowNextPlayerPrompt(false)}
+                        className="text-white/40 hover:text-white transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-white/60 mb-3">
+                      Next up: <strong className="text-white">{players.find(p => p.id === nextPlayerId)?.name}</strong>
+                    </p>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setShowNextPlayerPrompt(false)}
+                        className="flex-1 py-2 px-3 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setShowNextPlayerPrompt(false);
+                          startAuction(nextPlayerId);
+                        }}
+                        className="flex-1 py-2 px-3 bg-emerald-500 text-black rounded-lg text-xs font-bold hover:bg-emerald-400 transition-all flex items-center justify-center gap-1"
+                      >
+                        <Play className="w-3 h-3 fill-current" /> Start Now
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </motion.div>
-          </div>
-        )}
+          )}
+        </AnimatePresence>
       </main>
 
       <footer className="border-t border-white/10 py-8 mt-20">

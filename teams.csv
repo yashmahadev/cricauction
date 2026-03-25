@@ -1,0 +1,11 @@
+name,totalBudget,color,logoUrl,mobileNumber,email
+Mumbai Indians,1000,#004BA0,https://picsum.photos/seed/mi/200/200,9876543210,mi@example.com
+Chennai Super Kings,1000,#FFFF00,https://picsum.photos/seed/csk/200/200,9876543211,csk@example.com
+Royal Challengers Bangalore,1000,#EC1C24,https://picsum.photos/seed/rcb/200/200,9876543212,rcb@example.com
+Kolkata Knight Riders,1000,#3B2A7F,https://picsum.photos/seed/kkr/200/200,9876543213,kkr@example.com
+Rajasthan Royals,1000,#FF1493,https://picsum.photos/seed/rr/200/200,9876543214,rr@example.com
+Sunrisers Hyderabad,1000,#FF822A,https://picsum.photos/seed/srh/200/200,9876543215,srh@example.com
+Delhi Capitals,1000,#0078BC,https://picsum.photos/seed/dc/200/200,9876543216,dc@example.com
+Punjab Kings,1000,#ED1B24,https://picsum.photos/seed/pbks/200/200,9876543217,pbks@example.com
+Lucknow Super Giants,1000,#00BBF9,https://picsum.photos/seed/lsg/200/200,9876543218,lsg@example.com
+Gujarat Titans,1000,#1B2B5E,https://picsum.photos/seed/gt/200/200,9876543219,gt@example.com
