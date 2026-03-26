@@ -1880,16 +1880,16 @@ export default function App() {
         </AnimatePresence>
 
         {view === 'public' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 lg:gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
             {/* Left Column: Live Auction */}
             <div className="lg:col-span-8 space-y-8">
               <section className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden relative">
                 <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent pointer-events-none" />
                 
                 {auction.status === 'Active' && currentPlayer ? (
-                  <div className="p-8">
-                    <div className="flex flex-col md:flex-row gap-8">
-                      <div className="w-full md:w-64 aspect-square rounded-2xl overflow-hidden border border-white/10 shadow-2xl relative group">
+                  <div className="p-4 sm:p-6 lg:p-8">
+                    <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 lg:gap-8">
+                      <div className="w-full sm:w-40 lg:w-64 aspect-square rounded-2xl overflow-hidden border border-white/10 shadow-2xl relative group flex-shrink-0">
                         <PlayerAvatar
                           playerId={currentPlayer.id}
                           imageUrl={currentPlayer.imageUrl}
@@ -1898,40 +1898,40 @@ export default function App() {
                           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                           badgeSize="md"
                         />
-                        <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold border border-white/20">
+                        <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-2 py-1 rounded-full text-xs font-bold border border-white/20">
                           {currentPlayer.category}
                         </div>
                       </div>
                       
-                      <div className="flex-1 space-y-6">
+                      <div className="flex-1 min-w-0 space-y-4">
                         <div>
-                          <h2 className="text-4xl font-bold tracking-tight mb-2">{currentPlayer.name}</h2>
-                          <div className="flex flex-wrap gap-4 text-sm text-white/60">
-                            <span className="flex items-center gap-1.5"><Users className="w-4 h-4" /> {currentPlayer.stats.matches} Matches</span>
-                            {currentPlayer.stats.runs && <span className="flex items-center gap-1.5"><TrendingUp className="w-4 h-4" /> {currentPlayer.stats.runs} Runs</span>}
-                            {currentPlayer.stats.wickets && <span className="flex items-center gap-1.5"><Shield className="w-4 h-4" /> {currentPlayer.stats.wickets} Wickets</span>}
+                          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight mb-2 truncate">{currentPlayer.name}</h2>
+                          <div className="flex flex-wrap gap-2 sm:gap-4 text-xs sm:text-sm text-white/60">
+                            <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> {currentPlayer.stats.matches} Matches</span>
+                            {currentPlayer.stats.runs && <span className="flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> {currentPlayer.stats.runs} Runs</span>}
+                            {currentPlayer.stats.wickets && <span className="flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> {currentPlayer.stats.wickets} Wickets</span>}
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-                            <p className="text-xs text-white/40 uppercase tracking-wider font-bold mb-1">Base Price</p>
-                            <p className="text-2xl font-mono font-bold text-emerald-400">₹{currentPlayer.basePrice}L</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-white/5 rounded-2xl p-3 sm:p-4 border border-white/10">
+                            <p className="text-[10px] text-white/40 uppercase tracking-wider font-bold mb-1">Base Price</p>
+                            <p className="text-xl sm:text-2xl font-mono font-bold text-emerald-400">₹{currentPlayer.basePrice}L</p>
                           </div>
-                          <div className="bg-emerald-500/10 rounded-2xl p-4 border border-emerald-500/20">
-                            <p className="text-xs text-emerald-400/60 uppercase tracking-wider font-bold mb-1">Current Bid</p>
-                            <p className="text-2xl font-mono font-bold text-emerald-400">₹{auction.highestBid}L</p>
+                          <div className="bg-emerald-500/10 rounded-2xl p-3 sm:p-4 border border-emerald-500/20">
+                            <p className="text-[10px] text-emerald-400/60 uppercase tracking-wider font-bold mb-1">Current Bid</p>
+                            <p className="text-xl sm:text-2xl font-mono font-bold text-emerald-400">₹{auction.highestBid}L</p>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                              <Timer className={cn("w-6 h-6", displayTime <= 5 ? "text-red-500 animate-pulse" : "text-white/60")} />
+                        <div className="flex items-center justify-between p-3 sm:p-4 bg-white/5 rounded-2xl border border-white/10">
+                          <div className="flex items-center gap-2 sm:gap-3">
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                              <Timer className={cn("w-4 h-4 sm:w-6 sm:h-6", displayTime <= 5 ? "text-red-500 animate-pulse" : "text-white/60")} />
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
-                                <p className="text-xs text-white/40 font-bold uppercase">Time Remaining</p>
+                                <p className="text-[10px] text-white/40 font-bold uppercase">Time Remaining</p>
                                 {auction.status === 'Active' && (
                                   <span className="flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
@@ -1939,15 +1939,15 @@ export default function App() {
                                   </span>
                                 )}
                               </div>
-                              <p className={cn("text-xl font-mono font-bold", displayTime <= 5 ? "text-red-500" : "text-white")}>
+                              <p className={cn("text-lg sm:text-xl font-mono font-bold", displayTime <= 5 ? "text-red-500" : "text-white")}>
                                 {displayTime}s
                               </p>
                             </div>
                           </div>
                           
                           {highestBidder && (
-                            <div className="text-right flex items-center gap-4">
-                              <div className="hidden md:flex items-center gap-3 pr-4 border-r border-white/10">
+                            <div className="text-right flex items-center gap-2 sm:gap-4">
+                              <div className="hidden sm:flex items-center gap-3 pr-4 border-r border-white/10">
                                 <div className="text-right">
                                   <p className="text-[10px] text-white/40 uppercase font-bold">Player Stats</p>
                                   <div className="flex gap-2 text-[10px] font-mono font-bold">
@@ -1955,7 +1955,7 @@ export default function App() {
                                     <span className="text-white/40">|</span>
                                     <span className="text-white">{currentPlayer.stats.wickets || 0}W</span>
                                     <span className="text-white/40">|</span>
-                                    <span className="text-white">{currentPlayer.stats.economy || 'N/A'}E</span>
+                                    <span className="text-white">{currentPlayer.stats.economy != null ? Number(currentPlayer.stats.economy).toFixed(2) : 'N/A'}E</span>
                                   </div>
                                 </div>
                               </div>
@@ -1968,7 +1968,7 @@ export default function App() {
                         </div>
 
                         {/* Player Stats Chart */}
-                        <div className="bg-white/5 rounded-2xl border border-white/10 p-4">
+                        <div className="bg-white/5 rounded-2xl border border-white/10 p-3 sm:p-4">
                           <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">Performance Statistics</p>
                           <PlayerStatsChart stats={currentPlayer.stats} />
                         </div>
@@ -2097,8 +2097,8 @@ export default function App() {
                           <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{player.stats.matches}</span> M</span>
                           {player.stats.runs != null && <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{player.stats.runs}</span> R</span>}
                           {player.stats.wickets != null && <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{player.stats.wickets}</span> W</span>}
-                          {player.stats.strikeRate != null && <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{player.stats.strikeRate}</span> SR</span>}
-                          {player.stats.economy != null && <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{player.stats.economy}</span> Eco</span>}
+                          {player.stats.strikeRate != null && <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{Number(player.stats.strikeRate).toFixed(2)}</span> SR</span>}
+                          {player.stats.economy != null && <span className="text-[10px] text-white/40"><span className="text-white/70 font-bold">{Number(player.stats.economy).toFixed(2)}</span> Eco</span>}
                         </div>
                       </div>
                     </div>
@@ -2110,12 +2110,12 @@ export default function App() {
             {/* Right Column: Teams */}
             <div className="lg:col-span-4 space-y-8">
               <section>
-                <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                   <Shield className="w-5 h-5 text-emerald-500" />
                   Teams Standing
                 </h3>
                 {/* Budget leaderboard */}
-                <div className="mb-6 bg-white/5 rounded-2xl border border-white/10 overflow-hidden">
+                <div className="mb-4 bg-white/5 rounded-2xl border border-white/10 overflow-hidden">
                   <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
                     <BarChart2 className="w-4 h-4 text-yellow-400" />
                     <span className="text-xs font-black uppercase tracking-widest text-white/40">Budget Leaderboard</span>
@@ -2123,9 +2123,9 @@ export default function App() {
                   {[...teams].sort((a, b) => b.remainingBudget - a.remainingBudget).map((team, i) => {
                     const pct = team.totalBudget > 0 ? (team.remainingBudget / team.totalBudget) * 100 : 0;
                     return (
-                      <div key={team.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-white/5 last:border-0">
-                        <span className="text-xs font-black text-white/20 w-4">{i + 1}</span>
-                        <div className="w-5 h-5 rounded-md flex-shrink-0 flex items-center justify-center text-[9px] font-black text-white overflow-hidden" style={{ backgroundColor: team.color }}>
+                      <div key={team.id} className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 border-b border-white/5 last:border-0">
+                        <span className="text-xs font-black text-white/20 w-4 flex-shrink-0">{i + 1}</span>
+                        <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-md flex-shrink-0 flex items-center justify-center text-[9px] font-black text-white overflow-hidden" style={{ backgroundColor: team.color }}>
                           {team.logoUrl ? <img src={team.logoUrl} className="w-full h-full object-cover" loading="lazy" /> : team.name[0]}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -2139,38 +2139,39 @@ export default function App() {
                     );
                   })}
                 </div>
-                <div className="space-y-4">
+                {/* Team cards */}
+                <div className="space-y-3">
                   {teams.map(team => (
                     <div key={team.id} className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden">
                       <div className="h-1" style={{ backgroundColor: team.color }} />
-                      <div className="p-4">
-                        <div className="flex justify-between items-center mb-4">
-                          <div className="flex items-center gap-3">
+                      <div className="p-3 sm:p-4">
+                        <div className="flex justify-between items-center mb-3">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                             {team.logoUrl ? (
-                              <img src={team.logoUrl} className="w-10 h-10 rounded-xl object-cover border border-white/10" referrerPolicy="no-referrer" loading="lazy" />
+                              <img src={team.logoUrl} className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl object-cover border border-white/10 flex-shrink-0" referrerPolicy="no-referrer" loading="lazy" />
                             ) : (
-                              <div className="w-10 h-10 rounded-xl border border-white/10 flex items-center justify-center text-lg font-black text-white" style={{ backgroundColor: team.color }}>
+                              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl border border-white/10 flex items-center justify-center text-base font-black text-white flex-shrink-0" style={{ backgroundColor: team.color }}>
                                 {team.name[0]}
                               </div>
                             )}
-                            <div>
-                              <h4 className="font-bold text-lg">{team.name}</h4>
-                              <p className="text-xs text-white/40">
+                            <div className="min-w-0">
+                              <h4 className="font-bold text-sm sm:text-base truncate">{team.name}</h4>
+                              <p className="text-[10px] text-white/40 truncate">
                                 Captain: {players.find(p => p.id === team.captainId)?.name || 'TBD'} · Vice: {players.find(p => p.id === team.viceCaptainId)?.name || 'TBD'}
                               </p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Budget</p>
-                            <p className="font-mono font-bold text-emerald-400">₹{team.remainingBudget}L</p>
+                          <div className="text-right flex-shrink-0 ml-2">
+                            <p className="text-[9px] text-white/40 uppercase font-bold tracking-widest">Budget</p>
+                            <p className="font-mono font-bold text-emerald-400 text-sm">₹{team.remainingBudget}L</p>
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-1.5">
                           {team.players.length > 0 ? (
                             team.players.map(pid => {
                               const p = players.find(pl => pl.id === pid);
                               return (
-                                <div key={pid} className="w-8 h-8 rounded-lg bg-white/10 border border-white/10 overflow-hidden" title={p?.name}>
+                                <div key={pid} className="w-7 h-7 rounded-lg bg-white/10 border border-white/10 overflow-hidden" title={p?.name}>
                                   {p && (
                                     <PlayerAvatar
                                       playerId={p.id}
@@ -2323,25 +2324,25 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 20 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl"
+                    className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-4 sm:p-8 max-w-md w-full shadow-2xl"
                   >
-                    <div className="text-center mb-6">
+                    <div className="text-center mb-4 sm:mb-6">
                       <div className={cn(
-                        "w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center",
+                        "w-12 h-12 sm:w-16 sm:h-16 rounded-2xl mx-auto mb-3 sm:mb-4 flex items-center justify-center",
                         importStatus.status === 'processing' ? "bg-blue-500/20 text-blue-500" :
                         importStatus.status === 'completed' ? "bg-emerald-500/20 text-emerald-500" :
                         "bg-red-500/20 text-red-500"
                       )}>
-                        {importStatus.status === 'processing' ? <Loader2 className="w-8 h-8 animate-spin" /> :
-                         importStatus.status === 'completed' ? <CheckCircle2 className="w-8 h-8" /> :
-                         <AlertCircle className="w-8 h-8" />}
+                        {importStatus.status === 'processing' ? <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 animate-spin" /> :
+                         importStatus.status === 'completed' ? <CheckCircle2 className="w-6 h-6 sm:w-8 sm:h-8" /> :
+                         <AlertCircle className="w-6 h-6 sm:w-8 sm:h-8" />}
                       </div>
-                      <h3 className="text-2xl font-bold">
+                      <h3 className="text-lg sm:text-2xl font-bold">
                         {importStatus.status === 'processing' ? `Importing ${importStatus.type}...` :
                          importStatus.status === 'completed' ? 'Import Successful' :
                          'Import Failed'}
                       </h3>
-                      <p className="text-white/40 mt-1">
+                      <p className="text-white/40 mt-1 text-sm">
                         {importStatus.status === 'processing' ? `Processing ${importStatus.progress} of ${importStatus.total} records` :
                          importStatus.status === 'completed' ? `Successfully imported ${importStatus.total} ${importStatus.type}` :
                          importStatus.error}
@@ -2385,105 +2386,98 @@ export default function App() {
               {/* Live Auction Control - Full Width */}
               <div className="lg:col-span-4">
                 <section className={cn(
-                  "p-4 md:p-6 rounded-3xl border transition-all",
+                  "p-4 rounded-3xl border transition-all",
                   auction.status === 'Active' ? "bg-emerald-500/5 border-emerald-500/20" : "bg-white/5 border-white/10"
                 )}>
-                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-6 overflow-x-auto">
-                    <div className="flex items-start md:items-center gap-3 md:gap-6 flex-1 min-w-0">
-                      <div className="w-14 md:w-20 h-14 md:h-20 flex-shrink-0 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
-                        {currentPlayer ? (
-                          <PlayerAvatar
-                            playerId={currentPlayer.id}
-                            imageUrl={currentPlayer.imageUrl}
-                            name={currentPlayer.name}
-                            teams={teams}
-                            className="w-full h-full object-cover"
-                            badgeSize="xs"
-                          />
-                        ) : (
-                          <User className="w-10 h-10 text-white/10" />
-                        )}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-2xl font-bold">{currentPlayer?.name || 'No Active Player'}</h3>
-                          {auction.status === 'Active' && (
-                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-500 text-[10px] font-bold uppercase animate-pulse">Live</span>
-                          )}
-                        </div>
-                        <p className="text-white/40 text-sm">{currentPlayer ? `${currentPlayer.category} • Base ₹${currentPlayer.basePrice}L` : 'Select a player from the list below to start an auction.'}</p>
-                      </div>
+                  {/* Row 1: Player info always visible */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-12 h-12 flex-shrink-0 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
+                      {currentPlayer ? (
+                        <PlayerAvatar
+                          playerId={currentPlayer.id}
+                          imageUrl={currentPlayer.imageUrl}
+                          name={currentPlayer.name}
+                          teams={teams}
+                          className="w-full h-full object-cover"
+                          badgeSize="xs"
+                        />
+                      ) : (
+                        <User className="w-6 h-6 text-white/10" />
+                      )}
                     </div>
-
-                    {auction.status !== 'Active' && currentPlayer && (
-                      <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-end gap-3 w-full md:w-auto">
-                        <div className="text-right">
-                          <p className="text-[10px] text-white/40 font-bold uppercase mb-1">Status</p>
-                          <p className="text-lg font-bold text-white/60">
-                            {auction.status === 'Ended' ? 'Auction Ended' : auction.status === 'Paused' ? 'Paused' : 'Ready to Start'}
-                          </p>
-                        </div>
-                        {auction.status === 'Paused' ? (
-                          <button
-                            onClick={resumeAuction}
-                            className="px-6 md:px-8 py-2 md:py-3 bg-yellow-500 text-black rounded-xl font-bold hover:bg-yellow-400 transition-all flex items-center gap-2 text-sm md:text-base w-full md:w-auto justify-center"
-                          >
-                            <Play className="w-5 h-5 fill-current" /> Resume
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => startAuction(currentPlayer.id)}
-                            className="px-6 md:px-8 py-2 md:py-3 bg-emerald-500 text-black rounded-xl font-bold hover:bg-emerald-400 transition-all flex items-center gap-2 text-sm md:text-base w-full md:w-auto justify-center"
-                          >
-                            <Play className="w-5 h-5 fill-current" /> Start Auction
-                          </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-base sm:text-xl font-bold truncate">{currentPlayer?.name || 'No Active Player'}</h3>
+                        {auction.status === 'Active' && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-500 text-[10px] font-bold uppercase animate-pulse flex-shrink-0">Live</span>
                         )}
+                      </div>
+                      <p className="text-white/40 text-xs truncate">{currentPlayer ? `${currentPlayer.category} • Base ₹${currentPlayer.basePrice}L` : 'Select a player from the list below.'}</p>
+                    </div>
+                  </div>
+
+                  {/* Row 2: Active auction — bid info + controls */}
+                  {auction.status === 'Active' && (
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                      {/* Current Bid */}
+                      <div className="flex-shrink-0">
+                        <p className="text-[9px] text-white/40 font-bold uppercase">Current Bid</p>
+                        <p className="text-lg sm:text-2xl font-mono font-bold text-emerald-400 leading-tight">₹{auction.highestBid}L</p>
+                        {highestBidder && <p className="text-[10px] font-bold text-white/70 truncate max-w-[100px]">by {highestBidder.name}</p>}
+                      </div>
+                      {/* Time Left */}
+                      <div className="flex-shrink-0">
+                        <p className="text-[9px] text-white/40 font-bold uppercase">Time Left</p>
+                        <p className={cn("text-lg sm:text-2xl font-mono font-bold leading-tight", displayTime <= 5 ? "text-red-500" : "text-white")}>{displayTime}s</p>
+                      </div>
+                      {/* Buttons */}
+                      <div className="flex items-center gap-2 flex-wrap ml-auto">
                         <button
-                          onClick={() => updateDoc(doc(db, 'auction', 'state'), { currentPlayerId: null, status: 'Idle' })}
-                          className="p-3 bg-white/5 border border-white/10 rounded-xl text-white/40 hover:text-white transition-all"
-                          title="Clear Selection"
+                          onClick={() => setShowResetTimerConfirm(true)}
+                          className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs font-bold hover:bg-white/10 transition-all whitespace-nowrap"
                         >
-                          <RotateCcw className="w-5 h-5" />
+                          Reset Timer
+                        </button>
+                        <button
+                          onClick={pauseAuction}
+                          className="px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 rounded-lg text-xs font-bold hover:bg-yellow-500/20 transition-all"
+                        >
+                          Pause
+                        </button>
+                        <button
+                          onClick={() => setShowEndAuctionConfirm(true)}
+                          className="px-3 py-1.5 bg-red-500 text-white rounded-lg text-xs font-bold hover:bg-red-400 transition-all flex items-center gap-1 whitespace-nowrap"
+                        >
+                          <AlertCircle className="w-3 h-3" /> End Auction
                         </button>
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    {auction.status === 'Active' && (
-                      <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center sm:justify-start gap-4 md:gap-6 lg:gap-8 w-full md:w-auto">
-                        <div className="text-center">
-                          <p className="text-[10px] text-white/40 font-bold uppercase mb-1">Current Bid</p>
-                          <p className="text-2xl font-mono font-bold text-emerald-400">₹{auction.highestBid}L</p>
-                          {highestBidder && <p className="text-xs font-bold text-white" style={{ textShadow: `0 0 12px ${highestBidder.color}` }}>by {highestBidder.name}</p>}
-                        </div>
-                        <div className="text-center md:text-left">
-                          <p className="text-[10px] text-white/40 font-bold uppercase mb-1">Time Left</p>
-                          <p className={cn("text-2xl font-mono font-bold", displayTime <= 5 ? "text-red-500" : "text-white")}>{displayTime}s</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <button 
-                            onClick={() => setShowResetTimerConfirm(true)}
-                            className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-sm font-bold hover:bg-white/10 transition-all"
-                          >
-                            Reset Timer
-                          </button>
-                          <button
-                            onClick={pauseAuction}
-                            className="px-4 py-2 bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 rounded-xl text-sm font-bold hover:bg-yellow-500/20 transition-all"
-                          >
-                            Pause
-                          </button>
-                          <div className="w-px h-8 bg-white/10" />
-                          <button 
-                            onClick={() => setShowEndAuctionConfirm(true)}
-                            className="px-6 py-2 bg-red-500 text-black rounded-xl text-sm font-bold hover:bg-red-400 transition-all flex items-center gap-2"
-                          >
-                            <AlertCircle className="w-4 h-4" />
-                            End Auction
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  {/* Row 2: Non-active with player selected */}
+                  {auction.status !== 'Active' && currentPlayer && (
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <p className="text-sm font-bold text-white/50 mr-auto">
+                        {auction.status === 'Ended' ? 'Auction Ended' : auction.status === 'Paused' ? 'Paused' : 'Ready to Start'}
+                      </p>
+                      {auction.status === 'Paused' ? (
+                        <button onClick={resumeAuction} className="px-4 py-2 bg-yellow-500 text-black rounded-xl font-bold hover:bg-yellow-400 transition-all flex items-center gap-2 text-sm">
+                          <Play className="w-4 h-4 fill-current" /> Resume
+                        </button>
+                      ) : (
+                        <button onClick={() => startAuction(currentPlayer.id)} className="px-4 py-2 bg-emerald-500 text-black rounded-xl font-bold hover:bg-emerald-400 transition-all flex items-center gap-2 text-sm">
+                          <Play className="w-4 h-4 fill-current" /> Start Auction
+                        </button>
+                      )}
+                      <button
+                        onClick={() => updateDoc(doc(db, 'auction', 'state'), { currentPlayerId: null, status: 'Idle' })}
+                        className="p-2 bg-white/5 border border-white/10 rounded-xl text-white/40 hover:text-white transition-all"
+                        title="Clear Selection"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </section>
               </div>
 
@@ -3044,27 +3038,24 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-[#121212] border border-white/10 rounded-[2.5rem] p-10 max-w-xl w-full shadow-2xl relative overflow-hidden"
+                    className="bg-[#121212] border border-white/10 rounded-2xl sm:rounded-[2.5rem] p-5 sm:p-10 max-w-xl w-full shadow-2xl relative overflow-hidden max-h-[95vh] overflow-y-auto"
                   >
-                    {/* Decorative background element */}
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-[100px] -mr-32 -mt-32 rounded-full" />
-                    
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 blur-[100px] -mr-32 -mt-32 rounded-full pointer-events-none" />
                     <div className="relative z-10">
-                      <div className="flex items-center justify-between mb-8">
+                      <div className="flex items-center justify-between mb-5 sm:mb-8">
                         <div>
-                          <h3 className="text-3xl font-bold text-white">{editingPlayer ? 'Edit Player' : 'Add New Player'}</h3>
-                          <p className="text-white/40 text-sm mt-1">Fill in the professional details for the auction pool</p>
+                          <h3 className="text-xl sm:text-3xl font-bold text-white">{editingPlayer ? 'Edit Player' : 'Add New Player'}</h3>
+                          <p className="text-white/40 text-xs sm:text-sm mt-1">Fill in the professional details for the auction pool</p>
                         </div>
-                        <button 
+                        <button
                           onClick={() => { setIsAddingPlayer(false); setEditingPlayer(null); }}
-                          className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all"
+                          className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all flex-shrink-0 ml-3"
                         >
-                          <X className="w-6 h-6" />
+                          <X className="w-4 h-4 sm:w-6 sm:h-6" />
                         </button>
                       </div>
-
-                      <form onSubmit={editingPlayer ? editPlayer : addPlayer} className="space-y-6">
-                        <div className="grid grid-cols-2 gap-6">
+                      <form onSubmit={editingPlayer ? editPlayer : addPlayer} className="space-y-4 sm:space-y-6">
+                        <div className="grid grid-cols-2 gap-3 sm:gap-6">
                           <div className="col-span-2">
                             <label className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-2 block">Full Name</label>
                             <input 
@@ -3162,17 +3153,17 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="flex gap-4 mt-10">
+                        <div className="flex gap-3 sm:gap-4 mt-6 sm:mt-10">
                           <button 
                             type="button" 
                             onClick={() => { setIsAddingPlayer(false); setEditingPlayer(null); }} 
-                            className="flex-1 px-8 py-4 rounded-2xl bg-white/5 border border-white/10 font-bold text-white/60 hover:bg-white/10 transition-all"
+                            className="flex-1 px-4 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl bg-white/5 border border-white/10 font-bold text-white/60 hover:bg-white/10 transition-all text-sm"
                           >
                             Cancel
                           </button>
                           <button 
                             type="submit" 
-                            className="flex-1 px-8 py-4 rounded-2xl bg-emerald-500 text-black font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition-all active:scale-95"
+                            className="flex-1 px-4 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl bg-emerald-500 text-black font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 transition-all active:scale-95 text-sm"
                           >
                             {editingPlayer ? 'Update Player' : 'Create Player'}
                           </button>
@@ -3190,9 +3181,9 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl"
+                    className="bg-[#1a1a1a] border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-8 max-w-md w-full shadow-2xl max-h-[95vh] overflow-y-auto"
                   >
-                    <h3 className="text-2xl font-bold mb-6">{editingTeam ? 'Edit Team' : 'Add New Team'}</h3>
+                    <h3 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">{editingTeam ? 'Edit Team' : 'Add New Team'}</h3>
                     <form onSubmit={editingTeam ? editTeam : addTeam} className="space-y-4">
                       <div className="md:col-span-2">
                         <label className="text-xs font-bold text-white/40 uppercase mb-1 block">Team Logo</label>
@@ -3277,12 +3268,12 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+                    className="bg-[#1a1a1a] border border-white/10 rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-sm w-full shadow-2xl text-center"
                   >
-                    <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
                       <AlertCircle className="w-8 h-8 text-red-500" />
                     </div>
-                    <h3 className="text-2xl font-bold mb-2">Delete Player?</h3>
+                    <h3 className="text-lg sm:text-2xl font-bold mb-2">Delete Player?</h3>
                     <p className="text-white/60 mb-8">
                       Are you sure you want to delete <span className="text-white font-bold">{players.find(p => p.id === playerToDelete)?.name}</span>? This action cannot be undone.
                     </p>
@@ -3308,12 +3299,12 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+                    className="bg-[#1a1a1a] border border-white/10 rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-sm w-full shadow-2xl text-center"
                   >
-                    <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
                       <AlertCircle className="w-8 h-8 text-red-500" />
                     </div>
-                    <h3 className="text-2xl font-bold mb-2">Delete Team?</h3>
+                    <h3 className="text-lg sm:text-2xl font-bold mb-2">Delete Team?</h3>
                     <p className="text-white/60 mb-8">
                       Are you sure you want to delete <span className="text-white font-bold">{teams.find(t => t.id === teamToDelete)?.name}</span>? This action cannot be undone.
                     </p>
@@ -3339,12 +3330,12 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+                    className="bg-[#1a1a1a] border border-white/10 rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-sm w-full shadow-2xl text-center"
                   >
-                    <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
                       <RotateCcw className="w-8 h-8 text-red-500" />
                     </div>
-                    <h3 className="text-2xl font-bold mb-2">Reset Auction?</h3>
+                    <h3 className="text-lg sm:text-2xl font-bold mb-2">Reset Auction?</h3>
                     <p className="text-white/60 mb-8">
                       This will <span className="text-red-400 font-bold">DELETE ALL</span> teams and players from the database. This action cannot be undone.
                     </p>
@@ -3383,12 +3374,12 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-[#1a1a1a] border border-red-500/30 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+                    className="bg-[#1a1a1a] border border-red-500/30 rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-sm w-full shadow-2xl text-center"
                   >
-                    <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
                       <AlertCircle className="w-8 h-8 text-red-500" />
                     </div>
-                    <h3 className="text-2xl font-bold mb-2">End Auction Now?</h3>
+                    <h3 className="text-lg sm:text-2xl font-bold mb-2">End Auction Now?</h3>
                     <p className="text-white/60 mb-2">
                       This will finalize the current auction for <strong className="text-white">{currentPlayer?.name}</strong>.
                     </p>
@@ -3430,12 +3421,12 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-[#1a1a1a] border border-blue-500/30 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+                    className="bg-[#1a1a1a] border border-blue-500/30 rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-sm w-full shadow-2xl text-center"
                   >
-                    <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
                       <Timer className="w-8 h-8 text-blue-500" />
                     </div>
-                    <h3 className="text-2xl font-bold mb-2">Reset Timer?</h3>
+                    <h3 className="text-lg sm:text-2xl font-bold mb-2">Reset Timer?</h3>
                     <p className="text-white/60 mb-8">
                       This will reset the auction timer to <strong className="text-white">{settings.timerDuration} seconds</strong> and restart the countdown.
                     </p>
@@ -3465,12 +3456,12 @@ export default function App() {
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-[#1a1a1a] border border-emerald-500/30 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+                    className="bg-[#1a1a1a] border border-emerald-500/30 rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-sm w-full shadow-2xl text-center"
                   >
-                    <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
                       <Shield className="w-8 h-8 text-emerald-500" />
                     </div>
-                    <h3 className="text-2xl font-bold mb-2">Team Created!</h3>
+                    <h3 className="text-lg sm:text-2xl font-bold mb-2">Team Created!</h3>
                     <p className="text-white/60 mb-6 text-sm">
                       Share these credentials with the team owner. They can login using their email.
                     </p>
@@ -3520,12 +3511,12 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 20 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl"
+                    className="bg-[#1a1a1a] border border-white/10 rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-sm w-full shadow-2xl"
                   >
-                    <div className="w-14 h-14 bg-yellow-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 bg-yellow-500/10 rounded-2xl flex items-center justify-center mx-auto mb-3 sm:mb-4">
                       <Lock className="w-7 h-7 text-yellow-400" />
                     </div>
-                    <h3 className="text-xl font-bold text-center mb-1">{teamCredsModal.name}</h3>
+                    <h3 className="text-base sm:text-xl font-bold text-center mb-1">{teamCredsModal.name}</h3>
                     <p className="text-white/40 text-xs text-center mb-6">Login credentials — share with team owner</p>
 
                     <div className="bg-black/40 rounded-2xl border border-white/10 p-4 space-y-3 mb-6">
@@ -3958,7 +3949,7 @@ export default function App() {
                             }}
                             exit={{ opacity: 0, scale: 0.9, y: 20 }}
                             onClick={(e) => e.stopPropagation()}
-                            className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center"
+                            className="bg-[#1a1a1a] border border-white/10 rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-sm w-full shadow-2xl text-center"
                           >
                             <div className="w-24 h-24 rounded-2xl overflow-hidden border border-white/10 mx-auto mb-4 shadow-xl">
                               {currentPlayer && (
@@ -4155,7 +4146,7 @@ export default function App() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 onClick={(e) => e.stopPropagation()}
-                className="bg-[#1a1a1a] border border-white/10 rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl"
+                className="bg-[#1a1a1a] border border-white/10 rounded-2xl sm:rounded-3xl w-full max-w-3xl max-h-[92vh] overflow-y-auto shadow-2xl"
               >
                 <div className="flex items-center justify-between p-6 border-b border-white/10">
                   <div className="flex items-center gap-2">
@@ -4223,7 +4214,7 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 50 }}
                 onClick={(e) => e.stopPropagation()}
-                className="bg-[#121212] border border-white/10 rounded-[2.5rem] max-w-2xl w-full overflow-hidden shadow-2xl relative"
+                className="bg-[#121212] border border-white/10 rounded-2xl sm:rounded-[2.5rem] max-w-2xl w-full overflow-hidden shadow-2xl relative max-h-[95vh] overflow-y-auto"
               >
                 <button 
                   onClick={() => setSelectedPlayerProfile(null)}
@@ -4270,7 +4261,7 @@ export default function App() {
                         </div>
                         <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
                           <p className="text-[10px] text-white/20 uppercase font-bold mb-1">Avg/SR</p>
-                          <p className="text-xl font-mono font-bold">{(selectedPlayerProfile.stats.runs || 0) / (selectedPlayerProfile.stats.matches || 1).toFixed(1)}</p>
+                          <p className="text-xl font-mono font-bold">{((selectedPlayerProfile.stats.runs || 0) / (selectedPlayerProfile.stats.matches || 1)).toFixed(2)}</p>
                         </div>
                       </div>
                     </section>
@@ -4366,7 +4357,7 @@ export default function App() {
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: 20 }}
                   onClick={(e) => e.stopPropagation()}
-                  className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl"
+                  className="bg-[#1a1a1a] border border-white/10 rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-md w-full shadow-2xl max-h-[95vh] overflow-y-auto"
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between mb-6">
@@ -4534,10 +4525,10 @@ export default function App() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
                 onClick={(e) => e.stopPropagation()}
-                className="bg-[#1a1a1a] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl"
+                className="bg-[#1a1a1a] border border-white/10 rounded-2xl sm:rounded-3xl p-5 sm:p-8 max-w-sm w-full shadow-2xl"
               >
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-bold">Adjust Live Bid</h3>
+                  <h3 className="text-base sm:text-xl font-bold">Adjust Live Bid</h3>
                   <button onClick={() => { setShowBidAdjust(false); setBidAdjustTeamId(null); setBidAdjustAmount(''); }} className="p-2 text-white/40 hover:text-white transition-colors">
                     <X className="w-5 h-5" />
                   </button>

@@ -2,84 +2,59 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
     function isAdmin() {
-      return request.auth != null &&
+      return isSignedIn() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     function isTeamUser() {
-      return request.auth != null &&
+      return isSignedIn() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'team';
     }
 
-    function getTeamId() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId
-        : null;
+    function myTeamId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId;
     }
 
-    function isOwner(userId) {
-      return request.auth != null && request.auth.uid == userId;
-    }
-
-    // ---------------------------------------------------------------
-    // users
-    // ---------------------------------------------------------------
+    // users — own read/write + admin full access
     match /users/{userId} {
-      allow read: if request.auth != null && (isOwner(userId) || isAdmin());
-      allow create: if request.auth != null && isOwner(userId) &&
-        request.resource.data.role in ['admin', 'team'];
-      allow update: if isAdmin() || isOwner(userId);
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow delete: if isAdmin();
     }
 
-    // ---------------------------------------------------------------
-    // players — admin full write; read public
-    // ---------------------------------------------------------------
+    // players — public read, admin write
     match /players/{playerId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // ---------------------------------------------------------------
-    // teams — admin full write; public read; team user can update own budget/players
-    // ---------------------------------------------------------------
+    // teams — public read, admin write, team user can update own budget/squad
     match /teams/{teamId} {
       allow read: if true;
       allow write: if isAdmin();
-      allow update: if isTeamUser() && getTeamId() == teamId &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['remainingBudget', 'players']);
+      allow update: if isTeamUser() && myTeamId() == teamId;
 
       match /private/{doc} {
         allow read, write: if isAdmin();
       }
     }
 
-    // ---------------------------------------------------------------
-    // auction — admin full write; public read
-    // team users can update auction/state to place bids
-    // ---------------------------------------------------------------
+    // auction — public read, admin write, team user can bid
     match /auction/{document} {
       allow read: if true;
       allow write: if isAdmin();
-      allow update: if isTeamUser() &&
-        document == 'state' &&
-        resource.data.status == 'Active' &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['highestBid', 'highestBidderId', 'bidHistory', 'startTime', 'timeLeft']) &&
-        request.resource.data.highestBid is number &&
-        (
-          (resource.data.highestBidderId == null && request.resource.data.highestBid >= resource.data.highestBid) ||
-          (resource.data.highestBidderId != null && request.resource.data.highestBid > resource.data.highestBid)
-        ) &&
-        (!('startTime' in resource.data) ||
-          request.time > resource.data.startTime + duration.value(2, 's'));
+      allow update: if isTeamUser() && document == 'state';
     }
 
-    // ---------------------------------------------------------------
-    // presence — public read/write for spectator count
-    // ---------------------------------------------------------------
+    // presence — public
     match /presence/{sessionId} {
       allow read, write: if true;
     }
