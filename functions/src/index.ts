@@ -70,7 +70,8 @@ interface Player {
 
 /**
  * Firestore Trigger: Monitor auction state changes
- * Automatically schedules auction end when status becomes Active
+ * Automatically schedules auction end when status becomes Active or a bid resets the timer.
+ * This is the sole authority for ending auctions — no client-side auto-end needed.
  */
 export const onAuctionStateChange = functions.firestore
   .document('auction/state')
@@ -78,26 +79,27 @@ export const onAuctionStateChange = functions.firestore
     const before = change.before.data() as AuctionState;
     const after = change.after.data() as AuctionState;
 
-    // Auction just became Active - schedule the end
-    if (before.status !== 'Active' && after.status === 'Active') {
-      const startTime = after.startTime || Date.now();
-      const scheduledEndTime = startTime + (after.timeLeft * 1000);
+    const isNowActive = after.status === 'Active';
+    const wasActive = before.status === 'Active';
 
-      // Store the scheduled end time
-      await change.after.ref.update({
-        scheduledEndTime,
-      });
+    // Recalculate scheduledEndTime whenever auction is Active and startTime changed
+    // This covers: auction start, bid placed (timer reset), resume from pause
+    if (isNowActive && after.startTime && after.startTime !== before.startTime) {
+      const scheduledEndTime = after.startTime + (after.timeLeft * 1000);
 
-      functions.logger.info('Auction started', {
+      await change.after.ref.update({ scheduledEndTime });
+
+      functions.logger.info('Auction timer updated', {
         playerId: after.currentPlayerId,
-        startTime,
+        startTime: after.startTime,
         scheduledEndTime,
         duration: after.timeLeft,
+        reason: wasActive ? 'bid_placed_or_timer_reset' : 'auction_started',
       });
     }
 
     // Auction was manually ended or paused - clear scheduled end
-    if (before.status === 'Active' && after.status !== 'Active') {
+    if (wasActive && !isNowActive) {
       await change.after.ref.update({
         scheduledEndTime: admin.firestore.FieldValue.delete(),
       });
